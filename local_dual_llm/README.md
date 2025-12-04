@@ -1,0 +1,1 @@
+pdf2image requires poppler-utils to be installed in path: sudo apt-get install poppler-utils
