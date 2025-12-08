@@ -37,3 +37,4 @@ def test_parse_generated_report_invalid_returns_string():
     assert isinstance(result, str)
     assert result == invalid
 
+

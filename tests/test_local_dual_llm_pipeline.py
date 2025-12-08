@@ -76,3 +76,4 @@ def test_batched_inference_empty_folder(pipeline_module, mock_config):
         # Should return None or empty result for no PDFs
         assert result is None or result.get("total", 0) == 0
 
+

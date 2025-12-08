@@ -20,3 +20,4 @@ def test_import_core_submodules():
     assert hasattr(utils, "clean_metadata")
     assert hasattr(json_cleaner, "parse_generated_report")
 
+

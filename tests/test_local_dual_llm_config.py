@@ -41,3 +41,4 @@ def test_config_debug_log_dir_property(config):
     debug_dir = config.debug_log_dir
     assert debug_dir == os.path.join(config.results_dir, "debug_logs")
 
+

@@ -100,3 +100,4 @@ def test_cleanup_folder_using_os(utils_module):
         utils_module.cleanup_folder_using_os(test_folder)
         assert not os.path.exists(test_folder)
 
+
