@@ -69,4 +69,4 @@ jobs:
     # 4. Smoke Test: Attempt Import
     - name: Attempt Import
       run: |
-        python -c "import pure-visual-grounding; print('Import successful')"
+        python -c "import pure_visual_grounding; print('Import successful')"
