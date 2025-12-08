@@ -1,8 +1,10 @@
 # test_batch.py
 import logging
 import sys
-from pipeline import batched_inference, inference_pdf, recursive_batched_inference
 import os
+
+# Use package-relative imports
+from .pipeline import batched_inference, inference_pdf, recursive_batched_inference
 
 
 # 1. Define where your PDFs are
