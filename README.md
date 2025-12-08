@@ -98,6 +98,7 @@ print(result["pages"][0]["Generated_Report"])
 - Keep public APIs stable; add new techniques via extras.
 - Document new flows with a dedicated README and example.
 - Prefer optional dependencies for heavy stacks.
+- Extend tests and examples
 
 ## License
 
