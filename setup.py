@@ -11,7 +11,7 @@ with open("local_dual_llm/requirements.txt", "r", encoding="utf-8") as fh:
     local_dual_llm_requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
 setup(
-    name="pure-visual-grounding",
+    name="pure-visual-grounder",
     version="1.0.3",
     author="Strategion",
     author_email="development@strategion.de",
