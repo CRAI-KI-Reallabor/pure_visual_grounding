@@ -36,6 +36,7 @@ setup(
     install_requires=requirements,
     extras_require={
         "local-dual-llm": local_dual_llm_requirements,
+        "all": local_dual_llm_requirements,
     },
     include_package_data=True,
 )

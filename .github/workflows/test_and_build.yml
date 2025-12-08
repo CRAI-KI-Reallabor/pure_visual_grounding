@@ -1,0 +1,74 @@
+name: Test and Build Verification
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest
+        # Install requirements if they exist
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        # Install the package itself in editable mode
+        pip install -e .
+
+    - name: Run Pytest
+      run: |
+        pytest tests/
+
+  # JOB 2: Build, Twine Check, and Smoke Test
+  build-and-verify:
+    needs: test 
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    - name: Install build tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    # 1. Build 
+    - name: Build package
+      run: |
+        python -m build
+
+    # 2. Check metadata
+    - name: Check metadata
+      run: |
+        twine check dist/*
+
+    # 3. Verify the package installs from the generated wheel
+    - name: Verify Installation
+      run: |
+        pip install dist/*.whl
+
+    # 4. Smoke Test: Attempt Import
+    - name: Attempt Import
+      run: |
+        python -c "import pure-visual-grounding; print('Import successful')"

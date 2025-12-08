@@ -33,6 +33,9 @@ local-dual-llm = [
     "accelerate==1.12.0",
     "qwen_vl_utils==0.0.14",
 ]
+all = [
+    "pure-visual-grounding[local-dual-llm]",
+]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
