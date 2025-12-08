@@ -12,7 +12,7 @@ with open("local_dual_llm/requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="pure-visual-grounding",
-    version="1.0.2",
+    version="1.0.3",
     author="Strategion",
     author_email="development@strategion.de",
     description="A package for processing PDFs with vision-based language models",
