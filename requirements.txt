@@ -1,5 +1,5 @@
 langchain~=0.3.27
-PyMuPDF>=1.26.6
+PyMuPDF>=1.26.5
 langchain-core~=0.3.72
 pathlib~=1.0.1
 langsmith>=0.1.17
