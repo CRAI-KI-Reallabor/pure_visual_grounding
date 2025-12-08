@@ -2,9 +2,7 @@ name: Test and Build Verification
 
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
 
 jobs:
   test:
