@@ -2,9 +2,9 @@ import os
 import json
 import time
 from typing import Optional
-import utils, prompts
-from engine import QwenEngine
-from config import LocalDualLLMConfig
+from . import utils, prompts
+from .engine import QwenEngine
+from .config import LocalDualLLMConfig
 
 def inference_pdf(pdf_path: str, config: LocalDualLLMConfig = None, engine: Optional[QwenEngine] = None, custom_output_dir: Optional[str] = None):
     # 1. Load Config if not provided
