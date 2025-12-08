@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pure-visual-grounding"
+name = "pure-visual-grounder"
 version = "1.0.3"
 authors = [
     {name = "Strategion", email = "development@strategion.de"}
