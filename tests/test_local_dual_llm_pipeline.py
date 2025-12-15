@@ -77,3 +77,4 @@ def test_batched_inference_empty_folder(pipeline_module, mock_config):
         assert result is None or result.get("total", 0) == 0
 
 
+

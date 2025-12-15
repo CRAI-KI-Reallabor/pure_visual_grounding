@@ -45,7 +45,6 @@ class QwenEngine:
             cache_dir=target_cache,
         )
         print("--- Model Loaded Successfully ---")
-        pass
 
     def run_inference(self, messages, max_new_tokens):
         text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)

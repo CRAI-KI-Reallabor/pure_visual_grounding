@@ -2,11 +2,24 @@ import os
 import json
 import time
 from typing import Optional
+import pymupdf as fitz  # PyMuPDF
 from . import utils, prompts
 from .engine import QwenEngine
 from .config import LocalDualLLMConfig
 
-def inference_pdf(pdf_path: str, config: LocalDualLLMConfig = None, engine: Optional[QwenEngine] = None, custom_output_dir: Optional[str] = None):
+def inference_pdf(pdf_path: str, config: LocalDualLLMConfig = None, engine: Optional[QwenEngine] = None, custom_output_dir: Optional[str] = None, page_subset: Optional[str] = None):
+    """
+    Process a PDF file with OCR and report generation.
+    
+    Args:
+        pdf_path: Path to the PDF file
+        config: Configuration object (optional)
+        engine: Pre-loaded QwenEngine (optional, will create if not provided)
+        custom_output_dir: Override output directory (optional)
+        page_subset: Optional string specifying pages to process.
+                    Supports formats: "1-2", "3", "1-4 and 2-4", "3,6,9", "pages 1-3,5,7-9"
+                    If None, all pages are processed.
+    """
     # 1. Load Config if not provided
     if config is None:
         config = LocalDualLLMConfig()
@@ -20,8 +33,25 @@ def inference_pdf(pdf_path: str, config: LocalDualLLMConfig = None, engine: Opti
     for d in [config.dataset_dir, config.cache_dir, config.debug_log_dir, current_dataset_dir, final_output_dir]:
         os.makedirs(d, exist_ok=True)
 
-    # 3. PDF to Images
-    image_paths = utils.convert_pdf_to_images(pdf_path, current_dataset_dir)
+    # 3. Parse page subset if provided
+    page_subset_set = None
+    if page_subset:
+        try:
+            # Get total pages first
+            doc = fitz.open(pdf_path)
+            total_pages = len(doc)
+            doc.close()
+            
+            # Parse the page subset string
+            page_subset_set = utils.parse_page_subset(page_subset, total_pages)
+            print(f"Page subset specified: {page_subset} -> processing pages {sorted(page_subset_set)}")
+        except ValueError as e:
+            return {"status": "error", "message": f"Invalid page subset: {e}"}
+        except Exception as e:
+            return {"status": "error", "message": f"Error reading PDF: {e}"}
+
+    # 4. PDF to Images
+    image_paths = utils.convert_pdf_to_images(pdf_path, current_dataset_dir, page_subset=page_subset_set)
     if not image_paths:
         return {"status": "error", "message": "PDF Conversion failed"}
 

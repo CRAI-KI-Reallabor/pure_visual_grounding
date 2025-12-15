@@ -38,3 +38,4 @@ def test_parse_generated_report_invalid_returns_string():
     assert result == invalid
 
 
+

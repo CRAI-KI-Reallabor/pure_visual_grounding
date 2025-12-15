@@ -1,12 +1,22 @@
 import os
 import json
 import re
+from typing import Optional
 import pymupdf as fitz  # PyMuPDF
 
-def convert_pdf_to_images(pdf_path: str, output_folder: str) -> list:
+def convert_pdf_to_images(pdf_path: str, output_folder: str, page_subset: Optional[set] = None) -> list:
     """
     Converts PDF to PNGs using PyMuPDF (no Poppler required),
     saves them, and returns list of file paths.
+    
+    Args:
+        pdf_path: Path to the PDF file
+        output_folder: Folder where PNG images will be saved
+        page_subset: Optional set of 1-indexed page numbers to convert.
+                    If None, all pages are converted.
+    
+    Returns:
+        List of file paths to the created PNG images
     """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -19,8 +29,26 @@ def convert_pdf_to_images(pdf_path: str, output_folder: str) -> list:
     try:
         # Open the PDF
         doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+        
+        if page_subset:
+            # Filter out pages not in subset and validate
+            valid_pages = {p for p in page_subset if 1 <= p <= total_pages}
+            if not valid_pages:
+                print(f"Warning: No valid pages in subset for PDF with {total_pages} pages")
+                doc.close()
+                return []
+            print(f"Processing pages: {sorted(valid_pages)} (out of {total_pages} total pages)")
+        else:
+            valid_pages = None  # Process all pages
         
         for i, page in enumerate(doc):
+            page_num = i + 1  # 1-indexed page number
+            
+            # Skip pages not in subset if subset is specified
+            if valid_pages is not None and page_num not in valid_pages:
+                continue
+            
             # Set Zoom for High Resolution (300 DPI)
             # Standard PDF is 72 DPI. 300 / 72 = ~4.166
             zoom = 300 / 72
@@ -28,7 +56,7 @@ def convert_pdf_to_images(pdf_path: str, output_folder: str) -> list:
             
             pix = page.get_pixmap(matrix=mat)
             
-            file_name = f"{base_name}_page_{i+1}.png"
+            file_name = f"{base_name}_page_{page_num}.png"
             full_path = os.path.join(output_folder, file_name)
             
             pix.save(full_path)
@@ -88,6 +116,82 @@ def flatten_extracted_info(extracted_info):
 
 def natural_sort_key(filename):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', filename)]
+
+def parse_page_subset(page_subset_str: str, total_pages: int) -> set:
+    """
+    Parse a page subset string into a set of 1-indexed page numbers.
+    
+    Supports multiple formats:
+    - "1-2" -> {1, 2}
+    - "3" -> {3}
+    - "1-4 and 2-4" -> {1, 2, 3, 4}
+    - "3,6,9" -> {3, 6, 9}
+    - "1-3,5,7-9" -> {1, 2, 3, 5, 7, 8, 9}
+    - "pages 3,6,9" -> {3, 6, 9} (handles "pages" prefix)
+    
+    Args:
+        page_subset_str: String specifying pages to process
+        total_pages: Total number of pages in the PDF (for validation)
+    
+    Returns:
+        Set of 1-indexed page numbers
+    
+    Raises:
+        ValueError: If the string format is invalid or page numbers are out of range
+    """
+    if not page_subset_str:
+        return set(range(1, total_pages + 1))  # Return all pages if None/empty
+    
+    # Normalize: remove "pages" prefix, handle "and", normalize whitespace
+    normalized = re.sub(r'^pages?\s+', '', page_subset_str.lower().strip(), flags=re.IGNORECASE)
+    normalized = re.sub(r'\s+and\s+', ',', normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r'\s+', '', normalized)  # Remove all whitespace
+    
+    page_set = set()
+    
+    # Split by comma to handle multiple ranges/individual pages
+    parts = normalized.split(',')
+    
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+            
+        # Check if it's a range (contains '-')
+        if '-' in part:
+            try:
+                start_str, end_str = part.split('-', 1)
+                start = int(start_str)
+                end = int(end_str)
+                
+                # Validate range
+                if start < 1 or end > total_pages:
+                    raise ValueError(f"Page range {start}-{end} is out of bounds (1-{total_pages})")
+                if start > end:
+                    raise ValueError(f"Invalid range: start ({start}) > end ({end})")
+                
+                # Add all pages in range (inclusive)
+                page_set.update(range(start, end + 1))
+            except ValueError as e:
+                if "invalid literal" in str(e).lower():
+                    raise ValueError(f"Invalid page range format: '{part}'. Expected format: 'start-end' (e.g., '1-3')")
+                raise
+        else:
+            # Single page number
+            try:
+                page_num = int(part)
+                if page_num < 1 or page_num > total_pages:
+                    raise ValueError(f"Page {page_num} is out of bounds (1-{total_pages})")
+                page_set.add(page_num)
+            except ValueError as e:
+                if "invalid literal" in str(e).lower():
+                    raise ValueError(f"Invalid page number format: '{part}'. Expected a number (e.g., '3')")
+                raise
+    
+    if not page_set:
+        raise ValueError(f"No valid pages found in subset string: '{page_subset_str}'")
+    
+    return page_set
 
 def parse_json_garbage(raw_text):
     """Parse JSON from raw text, handling markdown fences and malformed JSON."""
