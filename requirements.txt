@@ -1,11 +1,16 @@
-# Core model / pipeline dependencies
-transformers>=4.46.0
-accelerate>=0.34.0
-safetensors>=0.4.3
-PyMuPDF>=1.26.5
-Pillow>=10.0.0
-qwen_vl_utils==0.0.14
-# LangChain stack (from parent project)
+# # Core model / pipeline dependencies
+# transformers>=4.46.0
+# accelerate>=0.34.0
+# safetensors>=0.4.3
+# PyMuPDF>=1.26.5
+# Pillow>=10.0.0
+# qwen_vl_utils==0.0.14
+# # LangChain stack (from parent project)
+# langchain~=0.3.27
+# langchain-core~=0.3.72
+# langsmith>=0.1.17
 langchain~=0.3.27
+PyMuPDF>=1.26.5
 langchain-core~=0.3.72
+pathlib~=1.0.1
 langsmith>=0.1.17
