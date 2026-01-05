@@ -52,7 +52,7 @@ all = [
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
-include = ["pure_visual_grounding*", "local_dual_llm*"]
+include = ["pure_visual_grounding*", "local_dual_llm*", "efficient_llm*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md"]
