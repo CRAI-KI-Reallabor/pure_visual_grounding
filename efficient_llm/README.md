@@ -51,7 +51,7 @@ flowchart TD
     A["PDF file (optional)"] --> B["convert_pdf_to_images()"]
     A2["Existing PNG pages"] --> B
     B --> C["run_dots_layout_on_folder()"]
-    C --> D["solarlux_OCR_result_combined.json"]
+    C --> D["dots_ocr_result_combined.json"]
     D --> E["parse_ocr_file() ➜ extract_picture_regions()"]
     E --> F["build_picture_manifest() ➜ crops_dir/*.png"]
     F --> G["GemmaCropOcrEngine (Gemma VLM)"]
@@ -80,7 +80,7 @@ python -m efficient_llm.example_test_batch   --dots-model "/path/to/DotsOCR"   -
 This will:
 
 1. Convert `./input.pdf` to PNG pages in `./run/pngs` (if the folder is empty),
-2. Run DOTS layout OCR and save `./run/pngs/solarlux_OCR_result_combined.json`,
+2. Run DOTS layout OCR and save `./run/pngs/dots_ocr_result_combined.json`,
 3. Detect all `Picture` regions and crop them into `./run/crops`,
 4. Run Gemma OCR on each crop,
 5. Save the final merged JSON to `./run/reports/final_image_description_reports_combined_batch_v2.json`.
@@ -91,10 +91,10 @@ This will:
 
 ```python
 import json
-from efficient_llm.config import SolarluxPipelineConfig
+from efficient_llm.config import PipelineConfig
 from efficient_llm.pipeline import run_pipeline
 
-cfg = SolarluxPipelineConfig(
+cfg = PipelineConfig(
     dots_model_path="/path/to/DotsOCR",
     pdf_path="samples/document.pdf",
     image_folder="./run/pngs",
@@ -115,10 +115,10 @@ print("num picture regions:", len(report[0]["picture_ocr_result"]))
 
 ```python
 import json
-from efficient_llm.config import SolarluxPipelineConfig
+from efficient_llm.config import PipelineConfig
 from efficient_llm.pipeline import run_pipeline
 
-cfg = SolarluxPipelineConfig(
+cfg = PipelineConfig(
     dots_model_path="/path/to/DotsOCR",
     pdf_path="samples/document.pdf",
     image_folder="./run_custom/pngs",
@@ -155,13 +155,13 @@ print("pages:", len(report))
 ```python
 import json
 from pathlib import Path
-from efficient_llm.config import SolarluxPipelineConfig
+from efficient_llm.config import PipelineConfig
 from efficient_llm.pipeline import run_pipeline
 
 pdfs = sorted(Path("./pdfs").glob("*.pdf"))
 
 for pdf in pdfs:
-    cfg = SolarluxPipelineConfig(
+    cfg = PipelineConfig(
         dots_model_path="/path/to/DotsOCR",
         pdf_path=str(pdf),
         image_folder=f"./run_batch/{pdf.stem}/pngs",
@@ -441,7 +441,7 @@ python -m efficient_llm.example_test_batch   --dots-model "/path/to/DotsOCR"   -
 2. DOTS runs on all PNGs in `--image-folder` and saves:
 
    ```text
-   <image-folder>/solarlux_OCR_result_combined.json
+   <image-folder>/dots_ocr_result_combined.json
    ```
 
 3. All `Picture` regions from DOTS output are cropped into `--crops-dir`.
@@ -463,7 +463,7 @@ In this mode the PDF → PNG step is skipped and only DOTS + Gemma are run.
 ### 1. DOTS OCR output
 
 ```text
-<image-folder>/solarlux_OCR_result_combined.json
+<image-folder>/dots_ocr_result_combined.json
 ```
 
 Combined DOTS layout OCR for all processed page images.

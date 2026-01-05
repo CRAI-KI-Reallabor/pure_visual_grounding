@@ -6,7 +6,7 @@ from typing import Optional, Union
 PathLike = Union[str, Path]
 
 @dataclass
-class SolarluxPipelineConfig:
+class PipelineConfig:
     # paths
     dots_model_path: PathLike
     image_folder: PathLike

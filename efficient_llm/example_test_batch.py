@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from efficient_llm.config import SolarluxPipelineConfig
+from efficient_llm.config import PipelineConfig
 from efficient_llm.pipeline import run_pipeline
 
 
@@ -31,7 +31,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    cfg = SolarluxPipelineConfig(
+    cfg = PipelineConfig(
         dots_model_path=Path(args.dots_model),
         image_folder=Path(args.image_folder),
         pdf_path=Path(args.pdf) if args.pdf else None,

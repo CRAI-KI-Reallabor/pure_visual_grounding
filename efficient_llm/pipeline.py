@@ -9,7 +9,7 @@ from PIL import Image
 
 from qwen_vl_utils import process_vision_info
 
-from .config import SolarluxPipelineConfig
+from .config import PipelineConfig
 from .engine import DotsLayoutEngine, GemmaCropOcrEngine, dots_regenerate_with_more_tokens
 from .prompts import DOTS_LAYOUT_PROMPT
 from .utils import (
@@ -160,7 +160,7 @@ def build_final_reports(
     return final_reports
 
 
-def run_pipeline(cfg: SolarluxPipelineConfig) -> Path:
+def run_pipeline(cfg: PipelineConfig) -> Path:
     image_folder = Path(cfg.image_folder)
     crops_dir = Path(cfg.crops_dir)
     reports_dir = Path(cfg.reports_dir)
@@ -197,7 +197,7 @@ def run_pipeline(cfg: SolarluxPipelineConfig) -> Path:
     finally:
         dots_engine.close()
 
-    dots_out_path = image_folder / "solarlux_OCR_result_combined.json"
+    dots_out_path = image_folder / "dots_ocr_result_combined.json"
     with open(dots_out_path, "w", encoding="utf-8") as f:
         json.dump(ocr_map, f, ensure_ascii=False, indent=2)
 
