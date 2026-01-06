@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pure-visual-grounder"
-version = "1.0.2"
+version = "1.0.5"
 authors = [
     {name = "Strategion", email = "development@strategion.de"}
 ]
@@ -24,11 +24,24 @@ classifiers = [
 ]
 dynamic = ["dependencies"]
 
+[project.optional-dependencies]
+local-dual-llm = [
+    "torch==2.9.1",
+    "torchvision==0.24.1",
+    "pymupdf==1.26.6",
+    "transformers==4.57.3",
+    "accelerate==1.12.0",
+    "qwen_vl_utils==0.0.14",
+]
+all = [
+    "pure-visual-grounding[local-dual-llm]",
+]
+
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
-include = ["pure_visual_grounding*"]
+include = ["pure_visual_grounding*", "local_dual_llm*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md"]
