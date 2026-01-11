@@ -212,9 +212,10 @@ def run_pipeline(cfg: PipelineConfig) -> Path:
         do_crop=True,
     )
 
-    manifest_path = crops_dir.parent / "picture_regions_manifest_summary.json"
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    if cfg.save_manifest:
+        manifest_path = crops_dir.parent / cfg.manifest_filename
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, ensure_ascii=False, indent=2)
 
     # 3) Gemma crop OCR
     gemma_engine = GemmaCropOcrEngine(model_id=cfg.gemma_model_id, dtype=dtype, device_map=cfg.device_map)

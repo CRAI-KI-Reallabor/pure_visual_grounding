@@ -69,12 +69,26 @@ flowchart TD
 pip install "pure-visual-grounding[efficient-llm]"
 ```
 
-Make sure you also install a **CUDA-enabled PyTorch build** that matches your GPU (see *Environment & requirements*).
+Make sure you install a **CUDA-enabled PyTorch build** that matches your GPU.
+
+Official installation guides:
+- PyTorch (recommended): https://pytorch.org/get-started/locally/
+- NVIDIA CUDA Toolkit: https://developer.nvidia.com/cuda-downloads
+
+Refer to the PyTorch installation page to select the correct CUDA version for your system.
+
+
+Example (Linux, CUDA 12.x):
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+```
+This is only an example. Always follow the official PyTorch instructions for your system.
 
 ### 2. Minimal CLI usage (PDF → DOTS + Gemma)
 
 ```bash
-python -m efficient_llm.example_test_batch   --dots-model "/path/to/DotsOCR"   --image-folder "./run/pngs"   --pdf "./input.pdf"   --crops-dir "./run/crops"   --reports-dir "./run/reports"
+python -m efficient_llm.run_pipeline   --dots-model "/path/to/DotsOCR"   --image-folder "./run/pngs"   --pdf "./input.pdf"   --crops-dir "./run/crops"   --reports-dir "./run/reports"
 ```
 
 This will:
@@ -186,7 +200,7 @@ efficient_llm/
   __init__.py
   config.py
   engine.py
-  example_test_batch.py
+  run_pipeline.py
   pipeline.py
   prompts.py
   requirements.txt
@@ -195,7 +209,7 @@ efficient_llm/
 
 ---
 
-## Environment & requirements
+## Installation & Requirements
 
 ### Python and hardware
 
@@ -203,36 +217,24 @@ efficient_llm/
 - CUDA-capable GPU strongly recommended  
   (CPU-only will be extremely slow for large PDFs or high token limits)
 
-### Core Python dependencies
+### Standard Installation
 
-At minimum, you need:
-
-- `torch` (CUDA build recommended)
-- `transformers`
-- `accelerate`
-- `pymupdf`
-- `Pillow`
-- `flash-attn` (for DOTS / Gemma efficiency on modern GPUs)
-
-All other Python dependencies are listed in:
-
-```text
-efficient_llm/requirements.txt
-```
-
-Install them manually (standalone usage) with:
-
-```bash
-pip install -r efficient_llm/requirements.txt
-```
-
-Or install via the main package:
+The recommended way to install `efficient_llm` and all its dependencies (including `torch`, `transformers`, `pymupdf`, etc.) is via the main package extra:
 
 ```bash
 pip install "pure-visual-grounding[efficient-llm]"
 ```
 
-(This pulls in the same dependency set via the `efficient-llm` extra.)
+> [!NOTE]
+> This single command automatically pulls in all required dependencies. You do not need to install them individually.
+
+### Development / Standalone Installation
+
+If you are working directly within the source repository and want to install dependencies manually:
+
+```bash
+pip install -r efficient_llm/requirements.txt
+```
 
 ---
 
@@ -433,19 +435,19 @@ CONFIG_MAPPING.register("dots_ocr", DotsOCRConfig)
 The primary CLI entrypoint is:
 
 ```text
-efficient_llm/example_test_batch.py
+efficient_llm/run_pipeline.py
 ```
 
 ### Show CLI help
 
 ```bash
-python -m efficient_llm.example_test_batch -h
+python -m efficient_llm.run_pipeline -h
 ```
 
 ### Case A: Run using a PDF (PDF → PNG)
 
 ```bash
-python -m efficient_llm.example_test_batch   --dots-model "/path/to/DotsOCR"   --image-folder "/path/to/output_png_folder"   --pdf "/path/to/your_file.pdf"   --crops-dir "/path/to/output_crops"   --reports-dir "/path/to/output_reports"
+python -m efficient_llm.run_pipeline   --dots-model "/path/to/DotsOCR"   --image-folder "/path/to/output_png_folder"   --pdf "/path/to/your_file.pdf"   --crops-dir "/path/to/output_crops"   --reports-dir "/path/to/output_reports"
 ```
 
 #### What happens
@@ -464,7 +466,7 @@ python -m efficient_llm.example_test_batch   --dots-model "/path/to/DotsOCR"   -
 ### Case B: Run using existing PNGs (skip PDF)
 
 ```bash
-python -m efficient_llm.example_test_batch   --dots-model "/path/to/DotsOCR"   --image-folder "/path/to/png_folder"   --crops-dir "/path/to/output_crops"   --reports-dir "/path/to/output_reports"
+python -m efficient_llm.run_pipeline   --dots-model "/path/to/DotsOCR"   --image-folder "/path/to/png_folder"   --crops-dir "/path/to/output_crops"   --reports-dir "/path/to/output_reports"
 ```
 
 In this mode the PDF → PNG step is skipped and only DOTS + Gemma are run.
@@ -481,17 +483,13 @@ In this mode the PDF → PNG step is skipped and only DOTS + Gemma are run.
 
 Combined DOTS layout OCR for all processed page images.
 
-### 2. Picture manifest
+### 2. Picture manifest (Optional)
 
 ```text
 <crops-dir>/../picture_regions_manifest_summary.json
 ```
 
-Contains:
-
-- crop image paths
-- bounding boxes
-- page and region metadata
+Contains crop image paths, bounding boxes, and metadata. Generated only if `--save-manifest` is used.
 
 ### 3. Final combined report
 
@@ -541,7 +539,7 @@ High-level JSON structure:
 ### Example: reduce batch size to avoid OOM
 
 ```bash
-python -m efficient_llm.example_test_batch   --dots-model "/path/to/DotsOCR"   --image-folder "./pngs"   --pdf "./doc.pdf"   --crops-dir "./crops"   --reports-dir "./reports"   --batch-size 6
+python -m efficient_llm.run_pipeline   --dots-model "/path/to/DotsOCR"   --image-folder "./pngs"   --pdf "./doc.pdf"   --crops-dir "./crops"   --reports-dir "./reports"   --batch-size 6
 ```
 
 ---
@@ -694,7 +692,7 @@ Compared to the original baseline (**~25–35s/image, no batching, no Flash-Attn
 Run all commands from the directory **above** `efficient_llm/`, for example:
 
 ```bash
-python -m efficient_llm.example_test_batch -h
+python -m efficient_llm.run_pipeline -h
 ```
 
 Or ensure that `pure-visual-grounding[efficient-llm]` is properly installed in your environment.
@@ -726,7 +724,7 @@ Double-check the path passed to `--dots-model` and make sure it points to the **
 ## Minimal quickstart (CLI recap)
 
 ```bash
-python -m efficient_llm.example_test_batch   --dots-model "/path/to/DotsOCR"   --image-folder "./run/pngs"   --pdf "./input.pdf"   --crops-dir "./run/crops"   --reports-dir "./run/reports"
+python -m efficient_llm.run_pipeline   --dots-model "/path/to/DotsOCR"   --image-folder "./run/pngs"   --pdf "./input.pdf"   --crops-dir "./run/crops"   --reports-dir "./run/reports"
 ```
 
 ---

@@ -1,4 +1,4 @@
-# efficient_llm/example_test_batch.py
+# efficient_llm/run_pipeline.py
 
 import argparse
 from pathlib import Path
@@ -9,7 +9,7 @@ from efficient_llm.pipeline import run_pipeline
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run Solarlux DOTS + Gemma OCR pipeline"
+        description="Run Efficient DOTS + Gemma OCR pipeline"
     )
 
     parser.add_argument("--dots-model", required=True, help="Path to DOTS model")
@@ -24,6 +24,11 @@ def parse_args():
     parser.add_argument("--extra-max-new-tokens", type=int, default=15000)
     parser.add_argument("--gemma-model-id", default="google/gemma-3n-e4b-it")
     parser.add_argument("--crop-upscale", type=float, default=2.0)
+    parser.add_argument(
+        "--save-manifest",
+        action="store_true",
+        help="Save picture region manifest summary JSON for debugging/reproducibility.",
+    )
 
     return parser.parse_args()
 
@@ -43,6 +48,7 @@ def main():
         extra_max_new_tokens=args.extra_max_new_tokens,
         gemma_model_id=args.gemma_model_id,
         crop_upscale=args.crop_upscale,
+        save_manifest=args.save_manifest,
     )
 
     out_path = run_pipeline(cfg)

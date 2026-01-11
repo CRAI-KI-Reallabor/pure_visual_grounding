@@ -29,3 +29,7 @@ class PipelineConfig:
     attn_impl: str = "flash_attention_2"
     device_map: str = "auto"
     torch_dtype: str = "bfloat16"  # "bfloat16" or "float16"
+
+    # manifest options
+    save_manifest: bool = False
+    manifest_filename: str = "picture_regions_manifest_summary.json"
