@@ -323,19 +323,32 @@ python -c "from qwen_vl_utils import process_vision_info; print('OK')"
 
 ## Models
 
-### DOTS OCR model
+### DOTS OCR weights
 
-You must have the DOTS weights locally, for example:
+This pipeline requires the DOTS OCR model weights, which are **not distributed with this package**.
 
-```text
-/path/to/DotsOCR
-```
+You can obtain the DOTS weights in one of the following ways.
 
-Pass this directory via:
+#### Option 1: Download manually (official sources)
+
+- GitHub: [rednote-hilab/dots.ocr](https://github.com/rednote-hilab/dots.ocr)  
+- Hugging Face: [rednote-hilab/dots.ocr](https://huggingface.co/rednote-hilab/dots.ocr)  
+
+After downloading, pass the local directory to the pipeline:
 
 ```bash
 --dots-model "/path/to/DotsOCR"
 ```
+
+#### Option 2: Helper script (optional)
+
+A helper script is provided to download the DOTS OCR weights from Hugging Face and automatically apply a compatibility patch for newer transformers versions:
+
+```bash
+python scripts/download_and_patch_dots_ocr.py --dir "./weights/DotsOCR"
+```
+
+The script downloads the DOTS OCR weights from `rednote-hilab/dots.ocr` and applies the patch only if required. If you manually download the weights, we recommend checking the patching logic in the helper script to ensure compatibility with modern `transformers`.
 
 ### Gemma model
 
