@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Tuple
+import io
 
 import pymupdf as fitz
 from PIL import Image
@@ -9,7 +10,23 @@ from PIL import Image
 
 # ---------------- PDF -> PNG ----------------
 
-def convert_pdf_to_images(pdf_path: Union[str, Path], output_folder: Union[str, Path]) -> List[str]:
+def convert_pdf_to_images(
+    pdf_path: Union[str, Path],
+    output_folder: Union[str, Path],
+    dpi: int = 300,
+    max_long_edge_px: Optional[int] = None,
+    grayscale: bool = False,
+) -> List[str]:
+    """
+    Render a PDF to PNGs with configurable DPI and optional downscaling.
+
+    Args:
+        pdf_path: Input PDF path.
+        output_folder: Directory to write PNGs.
+        dpi: Target DPI for rasterization (default 300).
+        max_long_edge_px: If set, downscale images so longest edge <= this value.
+        grayscale: If True, render in grayscale to reduce size.
+    """
     pdf_path = str(pdf_path)
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
@@ -20,12 +37,26 @@ def convert_pdf_to_images(pdf_path: Union[str, Path], output_folder: Union[str, 
     doc = fitz.open(pdf_path)
     try:
         for i, page in enumerate(doc):
-            zoom = 300 / 72  # ~300 DPI
+            zoom = dpi / 72.0
             mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat)
+            colorspace = fitz.csGRAY if grayscale else None
+            pix = page.get_pixmap(matrix=mat, colorspace=colorspace)
+
+            # Convert pixmap to PIL for optional downscale
+            img_bytes = pix.tobytes("png")
+            im = Image.open(io.BytesIO(img_bytes))
+
+            if max_long_edge_px:
+                im.thumbnail((max_long_edge_px, max_long_edge_px), Image.LANCZOS)
+
+            # Convert to RGB if not grayscale to ensure consistency
+            if not grayscale and im.mode not in ('RGB', 'L'):
+                im = im.convert('RGB')
+
             file_name = f"{base_name}_page_{i+1}.png"
             full_path = output_folder / file_name
-            pix.save(str(full_path))
+            # Use moderate compression for balance between size and speed
+            im.save(full_path, format="PNG", optimize=True, compress_level=6)
             saved_paths.append(str(full_path))
     finally:
         doc.close()

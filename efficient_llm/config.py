@@ -14,6 +14,10 @@ class PipelineConfig:
     crops_dir: PathLike
     reports_dir: PathLike
 
+    # pdf rendering
+    pdf_dpi: int = 200
+    max_long_edge_px: Optional[int] = None
+
     # dots params
     padding: int = 12
     max_side: int = 1280
@@ -34,3 +38,6 @@ class PipelineConfig:
     # manifest options
     save_manifest: bool = False
     manifest_filename: str = "picture_regions_manifest_summary.json"
+
+    # logging
+    verbose: bool = False

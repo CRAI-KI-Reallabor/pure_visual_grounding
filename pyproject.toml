@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pure-visual-grounder"
-version = "1.0.6"
+version = "1.0.5"
 authors = [
     {name = "Strategion", email = "development@strategion.de"}
 ]
@@ -33,15 +33,36 @@ local-dual-llm = [
     "accelerate==1.12.0",
     "qwen_vl_utils==0.0.14",
 ]
+efficient-llm = [
+    "torch>=2.7.0",
+    "torchvision>=0.22.0",
+    "torchaudio>=2.7.0",
+    "transformers>=4.57.0",
+    "accelerate>=1.12.0",
+    "sentencepiece>=0.1.99",
+    "protobuf>=4.25.0",
+    # "flash-attn==2.8.0.post2", # Manual install required
+    "pillow>=10.0.0",
+    "pymupdf>=1.26.0",
+    "qwen-vl-utils>=0.0.14",
+    "numpy>=1.26.0",
+    "tqdm>=4.66.0",
+    "psutil>=5.9.0",
+    "huggingface-hub>=0.23.0",
+]
 all = [
     "pure-visual-grounder[local-dual-llm]",
+    "pure-visual-grounder[efficient-llm]",
 ]
+
+[project.scripts]
+pvg-download-ocr = "efficient_llm.download_dots_ocr:main"
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
-include = ["pure_visual_grounding*", "local_dual_llm*"]
+include = ["pure_visual_grounding*", "local_dual_llm*", "efficient_llm*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md"]

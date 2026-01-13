@@ -65,7 +65,7 @@ flowchart TD
 Install from the local folder (editable):
 
 ```bash
-pip install pure-visual-grounding[local-dual-llm]
+pip install pure-visual-grounder[local-dual-llm]
 ```
 
 ## Quick Start

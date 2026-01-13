@@ -18,8 +18,14 @@ class DotsLayoutEngine:
         attn_impl: str = "flash_attention_2",
         torch_dtype=torch.bfloat16,
         device_map: str = "auto",
+        verbose: bool = False,
     ):
         self.model_path = str(model_path)
+        self.verbose = verbose
+        if self.verbose:
+            print(f"[DOTS] Loading model from: {self.model_path}")
+            print(f"[DOTS] Requested Attention: {attn_impl}")
+        
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_path,
             attn_implementation=attn_impl,
@@ -27,6 +33,16 @@ class DotsLayoutEngine:
             device_map=device_map,
             trust_remote_code=True,
         ).eval()
+
+        # CRITICAL: Verify which attention implementation is actually being used
+        actual_attn = getattr(self.model.config, "_attn_implementation", "unknown")
+        if self.verbose or actual_attn != attn_impl:
+            print(f"[DOTS]   ACTUAL Attention Implementation: {actual_attn}")
+            if actual_attn != attn_impl:
+                print(f"[DOTS]   WARNING: Requested '{attn_impl}' but model is using '{actual_attn}'!")
+                print(f"[DOTS]   This model may not support Flash Attention 2. Performance will be slower.")
+                if attn_impl == "flash_attention_2":
+                    print(f"[DOTS]  Try using --attn-impl sdpa (Scaled Dot Product Attention) as fallback")
 
         self.processor = AutoProcessor.from_pretrained(self.model_path, trust_remote_code=True)
         self.processor.tokenizer.padding_side = "left"
@@ -97,7 +113,10 @@ def dots_regenerate_with_more_tokens(
 
 
 class GemmaCropOcrEngine:
-    def __init__(self, model_id: str = "google/gemma-3n-e4b-it", dtype=torch.bfloat16, device_map: str = "auto"):
+    def __init__(self, model_id: str = "google/gemma-3n-e4b-it", dtype=torch.bfloat16, device_map: str = "auto", verbose: bool = False):
+        self.verbose = verbose
+        if self.verbose:
+            print(f"[GEMMA] Loading model: {model_id}")
         self.model_id = model_id
         self.model = Gemma3nForConditionalGeneration.from_pretrained(
             model_id, device_map=device_map, torch_dtype=dtype
