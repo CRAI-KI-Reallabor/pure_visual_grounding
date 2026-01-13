@@ -24,6 +24,7 @@ class PipelineConfig:
     # gemma params
     gemma_model_id: str = "google/gemma-3n-e4b-it"
     crop_upscale: float = 2.0
+    summary_max_tokens: int = 2048  # Tokens for summary generation (increased for comprehensive summaries)
 
     # runtime/model loading
     attn_impl: str = "flash_attention_2"

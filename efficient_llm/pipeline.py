@@ -117,9 +117,54 @@ def build_final_reports(
     ocr_map: Dict[str, List[Dict[str, Any]]],
     gemma_engine: GemmaCropOcrEngine,
     crop_upscale: float = 2.0,
-) -> List[Dict[str, Any]]:
+    image_folder: Union[str, Path] = None,
+) -> Dict[str, Any]:
+    """
+    Build final reports with structured output format.
+    
+    This function structures the OCR results and generates page summaries using Gemma.
+    The output format matches the structure used by local_dual_llm for consistency.
+    
+    Args:
+        manifest: Picture regions manifest from build_picture_manifest
+        ocr_map: OCR results from DOTS layout engine
+        gemma_engine: Gemma engine for crop OCR and summary generation
+        crop_upscale: Upscaling factor for cropped images
+        image_folder: Path to folder containing full-page images (for summary generation)
+    
+    Returns:
+        Dict with structure:
+        {
+            "pdf_name": str,
+            "pages": [
+                {
+                    "page_image": str,
+                    "OCR_Result": {
+                        "ocr_pass_result": [...],  # DOTS layout results
+                        "picture_ocr_result": [...]  # Gemma crop OCR results
+                    },
+                    "Generated_Report": {
+                        "summary": str  # Gemma-generated page summary
+                    },
+                    "summary": str  # Convenience field (same as Generated_Report.summary)
+                }
+            ],
+            "errors": []
+        }
+    """
     images_list = manifest.get("images", [])
-    final_reports: List[Dict[str, Any]] = []
+    pages_reports: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    
+    # Try to extract PDF name from first image name
+    pdf_name = "document"
+    if images_list and images_list[0].get("image_name"):
+        first_img = images_list[0]["image_name"]
+        # Extract base name without _page_X.png
+        import re
+        match = re.match(r'(.+?)_page_\d+\.png', first_img)
+        if match:
+            pdf_name = match.group(1)
 
     for page in images_list:
         image_name = page.get("image_name")
@@ -143,21 +188,61 @@ def build_final_reports(
                 picture_ocr_result.append({"region_id": rid, "bbox": bbox, "text": ""})
                 continue
 
-            with Image.open(crop_path) as img:
-                img = img.convert("RGB")
-                if crop_upscale and crop_upscale != 1.0:
-                    img = upscale_image(img, scale=float(crop_upscale))
-                txt = gemma_engine.ocr_crop_plaintext(img)
+            try:
+                with Image.open(crop_path) as img:
+                    img = img.convert("RGB")
+                    if crop_upscale and crop_upscale != 1.0:
+                        img = upscale_image(img, scale=float(crop_upscale))
+                    txt = gemma_engine.ocr_crop_plaintext(img)
 
-            picture_ocr_result.append({"region_id": rid, "bbox": bbox, "text": txt})
+                picture_ocr_result.append({"region_id": rid, "bbox": bbox, "text": txt})
+            except Exception as e:
+                picture_ocr_result.append({"region_id": rid, "bbox": bbox, "text": ""})
+                errors.append({"page": image_name, "region": rid, "error": str(e)})
 
-        final_reports.append({
-            "image_name": image_name,
+        # Build OCR_Result (combining both passes)
+        ocr_result = {
             "ocr_pass_result": ocr_pass_result,
             "picture_ocr_result": picture_ocr_result
+        }
+
+        # Generate summary using the full page image
+        summary_text = ""
+        try:
+            if image_folder:
+                full_page_path = Path(image_folder) / image_name
+                if full_page_path.exists():
+                    with Image.open(full_page_path) as full_img:
+                        full_img = full_img.convert("RGB")
+                        # Create OCR context for summary
+                        ocr_context = json.dumps(ocr_result, ensure_ascii=False, indent=2)
+                        summary_result = gemma_engine.generate_page_summary(
+                            full_img, 
+                            ocr_context=ocr_context,
+                            max_new_tokens=2048  # Use increased token limit for comprehensive summaries
+                        )
+                        summary_text = summary_result.get("summary", "")
+        except Exception as e:
+            errors.append({"page": image_name, "error": f"Summary generation failed: {str(e)}"})
+            summary_text = "Summary generation failed."
+
+        # Build Generated_Report
+        generated_report = {
+            "summary": summary_text
+        }
+
+        pages_reports.append({
+            "page_image": image_name,
+            "OCR_Result": ocr_result,
+            "Generated_Report": generated_report,
+            "summary": summary_text  # Top-level summary for convenience
         })
 
-    return final_reports
+    return {
+        "pdf_name": pdf_name,
+        "pages": pages_reports,
+        "errors": errors
+    }
 
 
 def run_pipeline(cfg: PipelineConfig) -> Path:
@@ -217,7 +302,7 @@ def run_pipeline(cfg: PipelineConfig) -> Path:
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    # 3) Gemma crop OCR
+    # 3) Gemma crop OCR + Summary generation
     gemma_engine = GemmaCropOcrEngine(model_id=cfg.gemma_model_id, dtype=dtype, device_map=cfg.device_map)
     try:
         final_reports = build_final_reports(
@@ -225,6 +310,7 @@ def run_pipeline(cfg: PipelineConfig) -> Path:
             ocr_map=parsed_map,
             gemma_engine=gemma_engine,
             crop_upscale=cfg.crop_upscale,
+            image_folder=image_folder,  # Pass image_folder for summary generation
         )
     finally:
         gemma_engine.close()

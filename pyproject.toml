@@ -33,26 +33,15 @@ local-dual-llm = [
     "accelerate==1.12.0",
     "qwen_vl_utils==0.0.14",
 ]
-efficient-llm = [
-  "torch>=2.0",
-  "torchvision>=0.15",
-  "transformers>=4.46.0",
-  "accelerate>=0.34.0",
-  "safetensors>=0.4.3",
-  "PyMuPDF>=1.26.5",
-  "Pillow>=10.0.0",
-  "flash-attn==2.8.0.post2",
-]
-
 all = [
-    "pure-visual-grounding[local-dual-llm]","pure-visual-grounding[efficient-llm]"
+    "pure-visual-grounder[local-dual-llm]",
 ]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
-include = ["pure_visual_grounding*", "local_dual_llm*", "efficient_llm*"]
+include = ["pure_visual_grounding*", "local_dual_llm*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.txt", "*.md"]

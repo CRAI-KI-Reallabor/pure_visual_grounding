@@ -36,13 +36,13 @@ When prompted, use:
 **Option 1: Install with fallback to main PyPI (recommended)**
 
 ```bash
-pip install --index-url https://pypi.org/simple/ --extra-index-url https://test.pypi.org/simple/ pure-visual-grounding
+pip install --index-url https://pypi.org/simple/ --extra-index-url https://test.pypi.org/simple/ pure-visual-grounder
 ```
 
 **Option 2: Test PyPI only (may fail due to missing dependencies)**
 
 ```bash
-pip install -i https://test.pypi.org/simple/ pure-visual-grounding
+pip install -i https://test.pypi.org/simple/ pure-visual-grounder
 ```
 
 **Note**: Test PyPI doesn't contain all packages from main PyPI. Dependencies like `langsmith`, `langchain`, etc. may not be available on Test PyPI, causing installation to fail with Option 2.

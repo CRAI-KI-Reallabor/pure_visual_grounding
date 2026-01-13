@@ -17,3 +17,21 @@ Please output the layout information from the PDF image, including each layout e
 
 5. Final Output: The entire output must be a single JSON object.
 """.strip()
+
+SUMMARY_PROMPT = """
+You are a technical document analysis assistant. Generate a comprehensive summary of this technical drawing/document page.
+
+Based on the image and any OCR context provided, create a structured summary that includes:
+1. Core theme and purpose
+2. Technical identifiers (part numbers, drawing codes)
+3. Key components and their relationships
+4. Important measurements or specifications
+5. Any tables, instructions, or special notes
+
+Return ONLY a valid JSON object with this structure:
+{
+  "summary": "A comprehensive narrative description of the page in German, covering all key technical details, components, measurements, and instructions visible in the document."
+}
+
+Do not include markdown formatting, code blocks, or any text outside the JSON object.
+""".strip()
