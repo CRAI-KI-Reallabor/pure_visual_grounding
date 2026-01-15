@@ -214,38 +214,58 @@ python -m efficient_llm.run_pipeline \
 
 ## Programmatic Usage
 
-### Basic usage
+### Minimal usage (only 2 parameters required!)
 
+**Option 1: Process a PDF**
 ```python
-from efficient_llm.config import PipelineConfig
-from efficient_llm.pipeline import run_pipeline
+from efficient_llm import PipelineConfig, run_pipeline
 
 cfg = PipelineConfig(
     dots_model_path="/path/to/DotsOCR",
-    pdf_path="samples/document.pdf",
-    image_folder="./run/pngs",
-    crops_dir="./run/crops",
-    reports_dir="./run/reports",
+    pdf_path="samples/document.pdf"
+    # That's it! Output directories auto-generated as:
+    # - document_pngs/ (converted images)
+    # - document_crops/ (cropped picture regions)
+    # - document_reports/ (final JSON output)
 )
 
 out_path = run_pipeline(cfg)
 print(f"Report saved to: {out_path}")
 ```
 
-### Custom configuration
-
+**Option 2: Process existing PNG images**
 ```python
-from efficient_llm.config import PipelineConfig
-from efficient_llm.pipeline import run_pipeline
+from efficient_llm import PipelineConfig, run_pipeline
 
 cfg = PipelineConfig(
     dots_model_path="/path/to/DotsOCR",
-    pdf_path="samples/document.pdf",
+    image_folder="./my_pngs"
+    # Output directories auto-generated as:
+    # - my_pngs_crops/
+    # - my_pngs_reports/
+)
+
+out_path = run_pipeline(cfg)
+```
+
+### Custom configuration with all options
+
+```python
+from efficient_llm import PipelineConfig, run_pipeline
+
+cfg = PipelineConfig(
+    # Required: DOTS model
+    dots_model_path="/path/to/DotsOCR",
+    
+    # Required: ONE of these
+    pdf_path="samples/document.pdf",  # OR
     image_folder="./run/pngs",
+    
+    # Optional: Override auto-generated paths
     crops_dir="./run/crops",
     reports_dir="./run/reports",
     
-    # Performance tuning
+    # Optional: Performance tuning
     attn_impl="flash_attention_2",
     batch_size=18,
     base_max_new_tokens=4000,
@@ -270,12 +290,15 @@ out_path = run_pipeline(cfg)
 
 ### Required
 - `--dots-model`: Path to DOTS model directory
-- `--image-folder`: Folder for PNGs (input or generated)
-- `--crops-dir`: Directory to store cropped picture regions
-- `--reports-dir`: Directory to store final report JSON
+- **ONE of these**:
+  - `--pdf`: PDF file to process (auto-generates image folder)
+  - `--image-folder`: Existing folder with PNG images
+
+### Optional (paths with smart defaults)
+- `--crops-dir`: Directory to store cropped picture regions (auto-generated if not specified)
+- `--reports-dir`: Directory to store final report JSON (auto-generated if not specified)
 
 ### Optional (common)
-- `--pdf`: PDF file to convert if PNGs not present
 - `--pdf-dpi`: DPI for PDF rendering (default: 200)
 - `--max-long-edge-px`: Max pixel size for long edge (optional downscaling)
 - `--batch-size`: DOTS inference batch size (default: 18)
