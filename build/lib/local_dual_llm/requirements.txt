@@ -1,0 +1,6 @@
+torch==2.9.1
+PyMuPDF==1.26.6
+transformers==4.57.3
+accelerate==1.12.0
+qwen_vl_utils==0.0.14
+torchvision==0.24.1

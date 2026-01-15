@@ -1,0 +1,15 @@
+torch>=2.7.0
+torchvision>=0.22.0
+torchaudio>=2.7.0
+transformers>=4.57.0
+accelerate>=1.12.0
+sentencepiece>=0.1.99
+protobuf>=4.25.0
+# flash-attn==2.8.0.post2  # Install manually: pip install flash-attn --no-build-isolation
+pillow>=10.0.0
+pymupdf>=1.26.0
+qwen-vl-utils>=0.0.14
+numpy>=1.26.0
+tqdm>=4.66.0
+psutil>=5.9.0
+huggingface-hub>=0.23.0
