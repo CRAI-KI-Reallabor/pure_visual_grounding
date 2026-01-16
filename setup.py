@@ -10,9 +10,13 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 with open("local_dual_llm/requirements.txt", "r", encoding="utf-8") as fh:
     local_dual_llm_requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
+# Read efficient_llm requirements for optional dependency
+with open("efficient_llm/requirements.txt", "r", encoding="utf-8") as fh:
+    efficient_llm_requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+
 setup(
     name="pure-visual-grounder",
-    version="1.0.5",
+    version="1.0.7",
     author="Strategion",
     author_email="development@strategion.de",
     description="A package for processing PDFs with vision-based language models",
@@ -20,7 +24,7 @@ setup(
                      "often in need to be stored in RAG and lack the uniform structure. This package helps you to get "
                      "the relevant data out of the pdf",
     long_description_content_type="text/markdown",
-    packages=find_packages(include=['pure_visual_grounding', 'pure_visual_grounding.*', 'local_dual_llm', 'local_dual_llm.*']),
+    packages=find_packages(include=['pure_visual_grounding', 'pure_visual_grounding.*', 'local_dual_llm', 'local_dual_llm.*', 'efficient_llm', 'efficient_llm.*']),
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -36,7 +40,13 @@ setup(
     install_requires=requirements,
     extras_require={
         "local-dual-llm": local_dual_llm_requirements,
-        "all": local_dual_llm_requirements,
+        "efficient-llm": efficient_llm_requirements,
+        "all": local_dual_llm_requirements + efficient_llm_requirements,
+    },
+    entry_points={
+        "console_scripts": [
+            "pvg-download-ocr=efficient_llm.download_dots_ocr:main",
+        ],
     },
     include_package_data=True,
 )

@@ -10,8 +10,8 @@ One package, multiple PDF-to-vision pipelines. The base install ships the origin
 - **Core (cloud/hosted vision models)** — LangChain-based, uses external vision LLMs.  
   - Install: `pip install pure-visual-grounding`
 - **Local Dual LLM (Qwen2.5-VL)** — Fully local two-pass OCR + report pipeline.  
-  - Install: `pip install pure-visual-grounding[local-dual-llm]`
-- **Future techniques** — Add new flows as subpackages and expose via extras (see “Extendable pattern”).
+  - Install: `pip install pure-visual-grounding[local-dual-llm]`- **Efficient LLM (DOTS + Gemma)** — Advanced local OCR combining DOTS layout detection with Gemma picture-region OCR for technical documents.  
+  - Install: `pip install pure-visual-grounding[efficient-llm]`- **Future techniques** — Add new flows as subpackages and expose via extras (see “Extendable pattern”).
 
 ## Feature Highlights
 
@@ -27,6 +27,10 @@ One package, multiple PDF-to-vision pipelines. The base install ships the origin
   `pip install pure-visual-grounding`
 - Local Qwen2.5-VL flow:  
   `pip install pure-visual-grounding[local-dual-llm]`
+- Efficient LLM flow (DOTS + Gemma):  
+  `pip install pure-visual-grounding[efficient-llm]`
+
+**Note for Efficient LLM**: Flash-Attention and CUDA toolkit are required. See [efficient_llm/README.md](efficient_llm/README.md) for detailed setup instructions.
 
 ## Quick Start (Core Flow)
 
@@ -58,15 +62,48 @@ result = inference_pdf("samples/document.pdf")
 print(result["pages"][0]["Generated_Report"])
 ```
 
+## Quick Start (Efficient LLM)
+
+### Download DOTS OCR Model First
+
+```bash
+pvg-download-ocr
+```
+
+### CLI Usage
+
+```bash
+python -m efficient_llm.run_pipeline \
+  --dots-model "/path/to/DotsOCR" \
+  --pdf "./document.pdf"
+```
+
+### Programmatic Usage
+
+```python
+from efficient_llm.config import PipelineConfig
+from efficient_llm.pipeline import run_pipeline
+
+cfg = PipelineConfig(
+    dots_model_path="/path/to/DotsOCR",
+    pdf_path="document.pdf",
+)
+
+out_path = run_pipeline(cfg)
+print(f"Report saved to: {out_path}")
+```
+
 ## When to Choose Which
 
 - Use **Core** for quick setup with hosted vision models and minimal local deps.
 - Use **Local Dual LLM** for offline/local runs, GPU acceleration, and controlled caching/prompts.
+- Use **Efficient LLM** for technical documents requiring advanced layout detection and picture-region OCR with maximum accuracy on complex diagrams and tables.
 
 ## Package Layout
 
 - `pure_visual_grounding/` — Core LangChain-based vision pipeline (cloud/hosted)
 - `local_dual_llm/` — Local Qwen2.5-VL pipeline (OCR + report)
+- `efficient_llm/` — DOTS + Gemma pipeline for advanced layout and picture OCR
 - `examples/` (recommended) — Per-technique runnable samples
 - `tests/` (recommended) — Technique-specific tests
 
