@@ -271,7 +271,7 @@ cfg = PipelineConfig(
     base_max_new_tokens=4000,
     
     # PDF rendering
-    pdf_dpi=200,
+    pdf_dpi=100,
     max_long_edge_px=2048,
     
     # Gemma configuration

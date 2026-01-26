@@ -573,7 +573,7 @@ The pipeline has three main components with different performance characteristic
 3. **Downscale input images:**
    ```python
    cfg = PipelineConfig(
-       pdf_dpi=150,
+       pdf_dpi=100,
        max_long_edge_px=1536,
    )
    ```

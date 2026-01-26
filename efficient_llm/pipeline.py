@@ -243,9 +243,9 @@ def build_final_reports(
     pdf_name = "document"
     if images_list and images_list[0].get("image_name"):
         first_img = images_list[0]["image_name"]
-        # Extract base name without _page_X.png
+        # Extract base name without _page_X.{ext} (extension-agnostic)
         import re
-        match = re.match(r'(.+?)_page_\d+\.png', first_img)
+        match = re.match(r'(.+?)_page_\d+\.[a-zA-Z0-9]+$', first_img)
         if match:
             pdf_name = match.group(1)
     
@@ -271,40 +271,119 @@ def build_final_reports(
             key=lambda r: (r.get("order", 10**9), r.get("region_id", ""))
         )
 
-        picture_ocr_result: List[Dict[str, Any]] = []
+        # Pre-allocate result list to maintain original order
+        picture_ocr_result: List[Dict[str, Any]] = [None] * len(picture_regions_sorted)
         
         if verbose and len(picture_regions_sorted) > 0:
-            print(f"[GEMMA]   Processing {len(picture_regions_sorted)} crop regions...")
+            print(f"[GEMMA]   Processing {len(picture_regions_sorted)} crop regions (batch mode)...")
 
-        for crop_idx, r in enumerate(picture_regions_sorted, 1):
+        # Collect metadata only (no PIL objects yet to save RAM)
+        valid_crops = []  # List of (index, rid, bbox, crop_path)
+        for crop_idx, r in enumerate(picture_regions_sorted):
             rid = r.get("region_id")
             bbox = r.get("bbox")
             crop_path = r.get("crop_image_path")
 
             if not crop_path or not Path(crop_path).exists():
-                picture_ocr_result.append({"region_id": rid, "bbox": bbox, "text": ""})
+                picture_ocr_result[crop_idx] = {"region_id": rid, "bbox": bbox, "text": ""}
                 continue
 
-            try:
-                with Image.open(crop_path) as img:
-                    if verbose:
-                        print(f"[GEMMA]     Crop {crop_idx}/{len(picture_regions_sorted)}: {Path(crop_path).name} size={img.size} region_id={rid}")
-                    img = img.convert("RGB")
+            valid_crops.append((crop_idx, rid, bbox, crop_path))
+
+        # Determine batch size based on GPU memory
+        batch_size = 8  # Default
+        try:
+            if torch.cuda.is_available():
+                gpu_mem_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                if gpu_mem_gb >= 40:
+                    batch_size = 16
+                elif gpu_mem_gb >= 24:
+                    batch_size = 12
+                elif gpu_mem_gb >= 16:
+                    batch_size = 10
+                elif gpu_mem_gb >= 12:
+                    batch_size = 8
+                elif gpu_mem_gb >= 8:
+                    batch_size = 6
+                else:
+                    batch_size = 4
+        except:
+            pass
+
+        # Process valid crops in chunks
+        for chunk_start in range(0, len(valid_crops), batch_size):
+            chunk = valid_crops[chunk_start:chunk_start + batch_size]
+            
+            # Load images only for this chunk (memory efficient)
+            loaded_imgs = []
+            for idx, rid, bbox, crop_path in chunk:
+                try:
+                    img = Image.open(crop_path).convert("RGB")
                     if crop_upscale and crop_upscale != 1.0:
                         img = upscale_image(img, scale=float(crop_upscale))
-                    
-                    t_crop_start = time.time()
-                    txt = gemma_engine.ocr_crop_plaintext(img)
-                    t_crop_end = time.time()
-                    total_crop_ocr_time += (t_crop_end - t_crop_start)
+                    img.load()  # Force pixel data into memory
+                    loaded_imgs.append((idx, rid, bbox, img))
+                    if verbose:
+                        print(f"[GEMMA]     Loaded crop {idx + 1}/{len(picture_regions_sorted)}: {Path(crop_path).name}")
+                except Exception as e:
+                    picture_ocr_result[idx] = {"region_id": rid, "bbox": bbox, "text": ""}
+                    errors.append({"page": image_name, "region": rid, "error": str(e)})
+                    if verbose:
+                        print(f"[GEMMA]     WARNING: Error loading crop {rid}: {e}")
+
+            if not loaded_imgs:
+                continue
+
+            t_crop_start = time.time()
+            try:
+                # Batch OCR for this chunk
+                ocr_texts = gemma_engine.ocr_crop_plaintext_batch([x[3] for x in loaded_imgs])
+                t_crop_end = time.time()
+                total_crop_ocr_time += (t_crop_end - t_crop_start)
+                total_crops_processed += len(loaded_imgs)
+                
+                if verbose:
+                    print(f"[GEMMA]     Batch OCR completed: {len(loaded_imgs)} crops in {t_crop_end - t_crop_start:.2f}s")
+                
+                for (idx, rid, bbox, _), txt in zip(loaded_imgs, ocr_texts):
+                    picture_ocr_result[idx] = {"region_id": rid, "bbox": bbox, "text": txt}
+
+            except torch.OutOfMemoryError as e:
+                torch.cuda.empty_cache()
+                errors.append({"page": image_name, "error": f"Batch OCR OOM: {str(e)}"})
+                if verbose:
+                    print(f"[GEMMA]     WARNING: OOM, falling back to single processing")
+                # Fallback to single processing
+                for idx, rid, bbox, img in loaded_imgs:
+                    try:
+                        txt = gemma_engine.ocr_crop_plaintext(img)
+                    except Exception:
+                        txt = ""
+                    picture_ocr_result[idx] = {"region_id": rid, "bbox": bbox, "text": txt}
                     total_crops_processed += 1
 
-                picture_ocr_result.append({"region_id": rid, "bbox": bbox, "text": txt})
             except Exception as e:
-                picture_ocr_result.append({"region_id": rid, "bbox": bbox, "text": ""})
-                errors.append({"page": image_name, "region": rid, "error": str(e)})
+                t_crop_end = time.time()
+                total_crop_ocr_time += (t_crop_end - t_crop_start)
+                errors.append({"page": image_name, "error": f"Batch OCR failed: {str(e)}"})
                 if verbose:
-                    print(f"[GEMMA]     WARNING: Error processing crop {rid}: {e}")
+                    print(f"[GEMMA]     WARNING: Batch failed, falling back to single processing: {e}")
+                # Fallback to single processing
+                for idx, rid, bbox, img in loaded_imgs:
+                    try:
+                        txt = gemma_engine.ocr_crop_plaintext(img)
+                    except Exception:
+                        txt = ""
+                    picture_ocr_result[idx] = {"region_id": rid, "bbox": bbox, "text": txt}
+                    total_crops_processed += 1
+
+            # Clean up this chunk's images
+            for _, _, _, img in loaded_imgs:
+                img.close()
+            del loaded_imgs
+
+        # Finalize: filter out any None entries (shouldn't happen, but safety)
+        picture_ocr_result = [x for x in picture_ocr_result if x is not None]
 
         # Build OCR_Result (combining both passes)
         ocr_result = {

@@ -102,7 +102,8 @@ results = process_pdf_with_vision(
     llm=llm,
     vision_prompt=custom_prompt,
     reinforced_prompt=reinforcement_prompt,
-    dpi=300  # High resolution for detailed documents
+    dpi=100  
+    
 )
 ```
 
