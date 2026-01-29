@@ -15,7 +15,7 @@ class PipelineConfig:
     reports_dir: Optional[PathLike] = None
 
     # pdf rendering
-    pdf_dpi: int = 200
+    pdf_dpi: int = 150
     max_long_edge_px: Optional[int] = None
 
     # dots params

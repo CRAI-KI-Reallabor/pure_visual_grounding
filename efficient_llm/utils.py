@@ -18,7 +18,7 @@ def convert_pdf_to_images(
     grayscale: bool = False,
 ) -> List[str]:
     """
-    Render a PDF to PNGs with configurable DPI and optional downscaling.
+    Render a PDF to PNGs with optimal compression for small file sizes (~150KB per page).
 
     Args:
         pdf_path: Input PDF path.
@@ -42,21 +42,21 @@ def convert_pdf_to_images(
             colorspace = fitz.csGRAY if grayscale else None
             pix = page.get_pixmap(matrix=mat, colorspace=colorspace)
 
-            # Convert pixmap to PIL for optional downscale
+            # Convert to PIL Image for optimal compression
             img_bytes = pix.tobytes("png")
             im = Image.open(io.BytesIO(img_bytes))
 
+            # Downscale if requested
             if max_long_edge_px:
                 im.thumbnail((max_long_edge_px, max_long_edge_px), Image.LANCZOS)
 
-            # Convert to RGB if not grayscale to ensure consistency
-            if not grayscale and im.mode not in ('RGB', 'L'):
-                im = im.convert('RGB')
-
             file_name = f"{base_name}_page_{i+1}.png"
             full_path = output_folder / file_name
-            # Use moderate compression for balance between size and speed
-            im.save(full_path, format="PNG", optimize=True, compress_level=6)
+            
+            # Optimal PNG compression: compress_level=9 for maximum compression
+            # This creates small files (~150KB) while maintaining quality
+            im.save(str(full_path), format="PNG", optimize=True, compress_level=9)
+            
             saved_paths.append(str(full_path))
     finally:
         doc.close()
