@@ -16,7 +16,7 @@ with open("efficient_llm/requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="pure-visual-grounder",
-    version="1.0.7",
+    version="1.0.8",
     author="Strategion",
     author_email="development@strategion.de",
     description="A package for processing PDFs with vision-based language models",
