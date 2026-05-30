@@ -39,5 +39,9 @@ class PipelineConfig:
     save_manifest: bool = False
     manifest_filename: str = "picture_regions_manifest_summary.json"
 
+    # summary generation
+    generate_summary: bool = False
+    generate_picture_summary: bool = False
+
     # logging
     verbose: bool = False

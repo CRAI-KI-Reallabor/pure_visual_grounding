@@ -38,6 +38,16 @@ def parse_args():
     parser.add_argument("--device-map", default="auto", help="Device map (auto, cuda, cpu)")
 
     parser.add_argument(
+        "--generate-summary",
+        action="store_true",
+        help="Enable Gemma-based page summary generation (disabled by default for performance).",
+    )
+    parser.add_argument(
+        "--generate-picture-summary",
+        action="store_true",
+        help="Enable per-crop semantic description of engineering drawings (disabled by default for performance).",
+    )
+    parser.add_argument(
         "--save-manifest",
         action="store_true",
         help="Save picture region manifest summary JSON for debugging/reproducibility.",
@@ -95,6 +105,8 @@ def main():
         crop_upscale=args.crop_upscale,
         pdf_dpi=args.pdf_dpi,
         max_long_edge_px=args.max_long_edge_px,
+        generate_summary=args.generate_summary,
+        generate_picture_summary=args.generate_picture_summary,
         save_manifest=args.save_manifest,
         verbose=args.verbose,
         attn_impl=args.attn_impl,

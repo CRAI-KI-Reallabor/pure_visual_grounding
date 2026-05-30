@@ -210,3 +210,98 @@ def build_picture_manifest(
 def upscale_image(img: Image.Image, scale: float = 2.0) -> Image.Image:
     W, H = img.size
     return img.resize((int(W * scale), int(H * scale)), Image.LANCZOS)
+
+
+def tile_image(img: Image.Image, tile_size: int = 800, overlap: float = 0.2) -> List[Image.Image]:
+    """
+    Split a large image into overlapping tiles for OCR.
+
+    Only used when the image exceeds tile_size in either dimension. Overlap
+    ensures labels near tile boundaries are not split and missed.
+
+    Args:
+        img: PIL Image to tile.
+        tile_size: Maximum tile width/height in pixels.
+        overlap: Fraction of overlap between adjacent tiles (0.2 = 20%).
+
+    Returns:
+        List of tile PIL Images. Returns [img] unchanged if image fits within tile_size.
+    """
+    W, H = img.size
+    if W <= tile_size and H <= tile_size:
+        return [img]
+
+    step = int(tile_size * (1 - overlap))
+    tiles = []
+
+    y = 0
+    while y < H:
+        x = 0
+        while x < W:
+            x2 = min(x + tile_size, W)
+            y2 = min(y + tile_size, H)
+            tiles.append(img.crop((x, y, x2, y2)))
+            if x2 == W:
+                break
+            x += step
+        if y2 == H:
+            break
+        y += step
+
+    return tiles
+
+
+def find_adjacent_text(
+    picture_bbox: List[float],
+    ocr_elements: List[Dict[str, Any]],
+    proximity_px: int = 80,
+) -> str:
+    """
+    Find DOTS text/caption elements spatially adjacent to a picture bbox.
+
+    Looks for Caption, Text, and List-item elements whose bbox is within
+    proximity_px pixels of the picture region. This captures labels, captions,
+    and part-number lists that appear next to or below diagrams but fall outside
+    the picture bbox itself.
+
+    Args:
+        picture_bbox: [x1, y1, x2, y2] of the picture region.
+        ocr_elements: DOTS OCR elements for the page (ocr_pass_result).
+        proximity_px: Max pixel gap between picture bbox edge and text bbox edge.
+
+    Returns:
+        Concatenated adjacent text strings, newline-separated. Empty string if none found.
+    """
+    px1, py1, px2, py2 = map(int, picture_bbox)
+    adjacent = []
+
+    for el in ocr_elements:
+        cat = (el.get("category") or "").lower()
+        if cat not in ("caption", "text", "list-item", "section-header"):
+            continue
+        text = el.get("text", "").strip()
+        if not text:
+            continue
+        bbox = el.get("bbox")
+        if not bbox or len(bbox) != 4:
+            continue
+        tx1, ty1, tx2, ty2 = map(int, bbox)
+
+        # Check if text bbox is within proximity_px of picture bbox on any side
+        horizontally_overlapping = tx1 <= px2 + proximity_px and tx2 >= px1 - proximity_px
+        vertically_overlapping = ty1 <= py2 + proximity_px and ty2 >= py1 - proximity_px
+
+        # Adjacent below, above, left, or right
+        below = ty1 >= py2 and ty1 <= py2 + proximity_px and horizontally_overlapping
+        above = ty2 <= py1 and ty2 >= py1 - proximity_px and horizontally_overlapping
+        right = tx1 >= px2 and tx1 <= px2 + proximity_px and vertically_overlapping
+        left = tx2 <= px1 and tx2 >= px1 - proximity_px and vertically_overlapping
+        # Also include text that overlaps vertically with the picture (side labels)
+        overlapping_vertically = ty1 >= py1 - proximity_px and ty2 <= py2 + proximity_px and (
+            right or left
+        )
+
+        if below or above or right or left or overlapping_vertically:
+            adjacent.append(text)
+
+    return "\n".join(adjacent)
