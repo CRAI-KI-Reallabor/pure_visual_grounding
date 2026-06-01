@@ -801,7 +801,7 @@ def run_pipeline(cfg: PipelineConfig) -> Path:
     return out_json_path
 
 
-def run_pipeline_batch(cfgs: List[PipelineConfig]) -> List[Path]:
+def run_pipeline_batch(cfgs: List[PipelineConfig], combined_output_path: Optional[Union[str, Path]] = None) -> List[Path]:
     """
     Process multiple PDFs sharing a single load of DOTS and Gemma models.
 
@@ -814,9 +814,13 @@ def run_pipeline_batch(cfgs: List[PipelineConfig]) -> List[Path]:
 
     Args:
         cfgs: List of PipelineConfig instances, one per PDF/image_folder.
+        combined_output_path: If provided, all per-document reports are also merged
+            into a single JSON file at this path with structure:
+            {"documents": [{...report1...}, {...report2...}, ...]}
 
     Returns:
         List of paths to the final report JSON for each input config.
+        If combined_output_path is set, the combined file path is appended at the end.
     """
     if not cfgs:
         return []
@@ -940,6 +944,7 @@ def run_pipeline_batch(cfgs: List[PipelineConfig]) -> List[Path]:
     )
 
     out_paths: List[Path] = []
+    all_reports: List[Dict[str, Any]] = []  # collected for combined output
     try:
         for entry, dots_result in zip(resolved, dots_results):
             cfg = entry["cfg"]
@@ -972,14 +977,25 @@ def run_pipeline_batch(cfgs: List[PipelineConfig]) -> List[Path]:
                 print(f"[BATCH] {entry['base_name']}: DOTS {dots_t:.1f}s + Gemma {gemma_t:.1f}s = {dots_t + gemma_t:.1f}s -> {out_json_path}")
 
             out_paths.append(out_json_path)
+            all_reports.append(final_reports)
     finally:
         gemma_engine.close()
         if dots_engine is not None:
             dots_engine.close()
 
+    # Save combined output if requested
+    if combined_output_path:
+        combined_path = Path(combined_output_path)
+        combined_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(combined_path, "w", encoding="utf-8") as f:
+            json.dump({"total_documents": len(all_reports), "documents": all_reports}, f, ensure_ascii=False, indent=2)
+        if verbose:
+            print(f"[BATCH] Combined output saved: {combined_path}")
+        out_paths.append(combined_path)
+
     if verbose:
         print(f"\n{'='*60}")
-        print(f"BATCH COMPLETE — processed {len(out_paths)} document(s)")
+        print(f"BATCH COMPLETE — processed {len(all_reports)} document(s)")
         print(f"{'='*60}")
 
     return out_paths

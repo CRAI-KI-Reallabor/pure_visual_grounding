@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument("--pdf", default=None, help="Optional PDF path (single document mode)")
     parser.add_argument("--pdfs", nargs="+", default=None, help="Multiple PDF paths for batch mode — DOTS and Gemma load only once across all documents.")
     parser.add_argument("--pdf-folder", default=None, help="Folder containing PDFs to batch process. All .pdf files in the folder are processed with shared model loads.")
+    parser.add_argument("--combined-output", default=None, help="Optional path to save a single combined JSON file containing all batch results (used with --pdfs or --pdf-folder).")
     parser.add_argument("--crops-dir", help="Directory to store cropped images (optional)")
     parser.add_argument("--reports-dir", help="Directory to store final reports (optional)")
 
@@ -137,8 +138,8 @@ def main():
             base_name = pdf_path.stem
             cfgs.append(_build_cfg(args, pdf_path, None, base_name))
 
-        out_paths = run_pipeline_batch(cfgs)
-        print(f"[DONE] Processed {len(out_paths)} document(s):")
+        out_paths = run_pipeline_batch(cfgs, combined_output_path=args.combined_output)
+        print(f"[DONE] Processed {len(cfgs)} document(s):")
         for p in out_paths:
             print(f"  - {p}")
         return

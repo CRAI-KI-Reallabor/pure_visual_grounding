@@ -394,6 +394,28 @@ python -m efficient_llm.run_pipeline \
 
 Each document's output goes into its own `<base_name>_reports/` directory next to the source PDF. The same flags (`--generate-picture-summary`, `--ocr-max-new-tokens`, etc.) apply to all PDFs in the batch.
 
+**Optional `--combined-output`:** save all batch results into a single merged JSON file (in addition to the per-document files):
+
+```bash
+python -m efficient_llm.run_pipeline \
+  --dots-model "/path/to/DotsOCR" \
+  --pdf-folder ./solarlux_docs/ \
+  --combined-output ./solarlux_combined.json \
+  --generate-picture-summary --no-tiling --verbose
+```
+
+Combined file structure:
+```json
+{
+  "total_documents": 3,
+  "documents": [
+    {"pdf_name": "doc1", "pages": [...], "errors": []},
+    {"pdf_name": "doc2", "pages": [...], "errors": []},
+    {"pdf_name": "doc3", "pages": [...], "errors": []}
+  ]
+}
+```
+
 **Programmatic API:**
 ```python
 from efficient_llm import PipelineConfig, run_pipeline_batch
