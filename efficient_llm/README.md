@@ -317,6 +317,29 @@ out_path = run_pipeline(cfg)
 
 When both flags are enabled, picture descriptions are automatically injected as context into the page summary, producing the richest possible output for RAG retrieval.
 
+### OCR tuning (optional)
+- `--no-tiling`: Disable tiled OCR for large crops. By default, picture crops larger than 800px are split into overlapping tiles for more reliable OCR of dense diagrams. Use this flag if tiling introduces noise or duplicate fragments in your OCR output.
+- `--dots-on-crops`: Run DOTS OCR a second time on each picture crop to extract text labels embedded inside diagrams. Adds ~3-5 minutes per 100 crops. Useful when picture regions contain multiple labeled callouts that Gemma OCR misses.
+- `--ocr-max-new-tokens`: Token budget for Gemma crop OCR (default: 512). Raise to 1024-1536 for dense engineering drawings with many labels where some get truncated.
+
+### Recommended settings for production RAG
+
+For best quality at acceptable speed on a 24GB GPU:
+```bash
+python -m efficient_llm.run_pipeline \
+  --dots-model "/path/to/DotsOCR" \
+  --pdf "./doc.pdf" \
+  --batch-size 6 \
+  --crop-upscale 1.5 \
+  --pdf-dpi 150 \
+  --padding 80 \
+  --device-map cuda:0 \
+  --attn-impl flash_attention_2 \
+  --generate-picture-summary \
+  --no-tiling \
+  --verbose
+```
+
 ### Performance examples
 
 Reduce batch size to avoid OOM:

@@ -194,6 +194,69 @@ def run_dots_layout_on_folder(
     return all_results, timing_stats
 
 
+def run_dots_on_crop(
+    engine: DotsLayoutEngine,
+    img: Image.Image,
+    prompt: str,
+    max_new_tokens: int = 4000,
+) -> str:
+    """
+    Run DOTS OCR on a single crop image and return all extracted text concatenated.
+
+    Treats the crop as a mini-document — DOTS detects Text/Caption/List-item elements
+    inside the diagram and extracts their content. Useful for recovering arrow-connected
+    labels that are embedded inside Picture regions and missed by Gemma crop OCR.
+
+    Args:
+        engine: Loaded DotsLayoutEngine instance.
+        img: Crop PIL Image (already upscaled if needed).
+        prompt: DOTS layout prompt.
+        max_new_tokens: Token budget for DOTS generation on the crop.
+
+    Returns:
+        Concatenated text from all detected text elements, newline-separated.
+    """
+    try:
+        conv = [{"role": "user", "content": [
+            {"type": "image", "image": img},
+            {"type": "text", "text": prompt},
+        ]}]
+        messages = [conv]
+        text = engine.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        from qwen_vl_utils import process_vision_info
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = engine.processor(
+            text=text, images=image_inputs, videos=video_inputs,
+            padding=True, return_tensors="pt",
+        )
+        inputs = {k: (v.to(engine.model.device) if hasattr(v, "to") else v) for k, v in inputs.items()}
+
+        with torch.inference_mode():
+            out_ids = engine.model.generate(
+                **inputs, max_new_tokens=max_new_tokens,
+                do_sample=False, top_p=1.0, use_cache=True,
+            )
+
+        trimmed = out_ids[0, inputs["input_ids"][0].shape[0]:]
+        decoded = engine.processor.decode(trimmed, skip_special_tokens=True)
+        parsed = extract_json_array(decoded)
+
+        text_categories = {"text", "caption", "list-item", "section-header", "title", "footnote"}
+        lines = []
+        for el in parsed:
+            cat = (el.get("category") or "").lower()
+            if cat in text_categories and el.get("text"):
+                lines.append(el["text"].strip())
+
+        del inputs, image_inputs, video_inputs, out_ids, trimmed
+        torch.cuda.empty_cache()
+        return "\n".join(lines)
+
+    except Exception:
+        torch.cuda.empty_cache()
+        return ""
+
+
 def build_final_reports(
     manifest: Dict[str, Any],
     ocr_map: Dict[str, List[Dict[str, Any]]],
@@ -203,6 +266,10 @@ def build_final_reports(
     summary_max_tokens: int = 2048,
     generate_summary: bool = False,
     generate_picture_summary: bool = False,
+    use_tiling: bool = True,
+    dots_on_crops: bool = False,
+    dots_engine: DotsLayoutEngine = None,
+    ocr_max_new_tokens: int = 512,
     verbose: bool = False,
 ) -> Dict[str, Any]:
     """
@@ -346,32 +413,39 @@ def build_final_reports(
                 chunk_imgs = [x[3] for x in loaded_imgs]
                 chunk_adjacent = [x[4] for x in loaded_imgs]
 
-                # Use tiled OCR for large crops, batch OCR for small crops
-                large_mask = [max(img.size) > TILE_THRESHOLD for img in chunk_imgs]
-                ocr_texts = []
-                for img, is_large in zip(chunk_imgs, large_mask):
-                    if is_large:
-                        if verbose:
-                            print(f"[GEMMA]     Large crop ({img.size[0]}x{img.size[1]}px) — using tiled OCR")
-                        ocr_texts.append(gemma_engine.ocr_crop_plaintext_tiled(img))
-                    else:
-                        ocr_texts.append(None)  # placeholder for batch
+                if use_tiling:
+                    # Use tiled OCR for large crops, batch OCR for small crops
+                    large_mask = [max(img.size) > TILE_THRESHOLD for img in chunk_imgs]
+                    ocr_texts = []
+                    for img, is_large in zip(chunk_imgs, large_mask):
+                        if is_large:
+                            if verbose:
+                                print(f"[GEMMA]     Large crop ({img.size[0]}x{img.size[1]}px) — using tiled OCR")
+                            ocr_texts.append(gemma_engine.ocr_crop_plaintext_tiled(img, max_new_tokens=ocr_max_new_tokens))
+                        else:
+                            ocr_texts.append(None)  # placeholder for batch
 
-                # Batch OCR small crops together
-                small_indices = [i for i, large in enumerate(large_mask) if not large]
-                if small_indices:
-                    small_imgs = [chunk_imgs[i] for i in small_indices]
-                    small_texts = gemma_engine.ocr_crop_plaintext_batch(small_imgs)
-                    for i, txt in zip(small_indices, small_texts):
-                        ocr_texts[i] = txt
+                    # Batch OCR small crops together
+                    small_indices = [i for i, large in enumerate(large_mask) if not large]
+                    if small_indices:
+                        small_imgs = [chunk_imgs[i] for i in small_indices]
+                        small_texts = gemma_engine.ocr_crop_plaintext_batch(small_imgs, max_new_tokens=ocr_max_new_tokens)
+                        for i, txt in zip(small_indices, small_texts):
+                            ocr_texts[i] = txt
+                else:
+                    # No tiling — batch OCR all crops directly
+                    ocr_texts = gemma_engine.ocr_crop_plaintext_batch(chunk_imgs, max_new_tokens=ocr_max_new_tokens)
 
                 t_crop_end = time.time()
                 total_crop_ocr_time += (t_crop_end - t_crop_start)
                 total_crops_processed += len(loaded_imgs)
 
                 if verbose:
-                    n_tiled = sum(large_mask)
-                    print(f"[GEMMA]     OCR completed: {len(loaded_imgs)} crops in {t_crop_end - t_crop_start:.2f}s ({n_tiled} tiled, {len(loaded_imgs)-n_tiled} batched)")
+                    if use_tiling:
+                        n_tiled = sum(large_mask)
+                        print(f"[GEMMA]     OCR completed: {len(loaded_imgs)} crops in {t_crop_end - t_crop_start:.2f}s ({n_tiled} tiled, {len(loaded_imgs)-n_tiled} batched)")
+                    else:
+                        print(f"[GEMMA]     Batch OCR completed: {len(loaded_imgs)} crops in {t_crop_end - t_crop_start:.2f}s")
 
                 # Merge OCR text + adjacent DOTS text as grounding for descriptions
                 combined_texts = [
@@ -388,8 +462,25 @@ def build_final_reports(
                     if verbose:
                         print(f"[GEMMA]     Descriptions completed in {time.time() - t_desc_start:.2f}s")
 
-                for i, (idx, rid, bbox, _, adj) in enumerate(loaded_imgs):
-                    entry = {"region_id": rid, "bbox": bbox, "text": ocr_texts[i]}
+                for i, (idx, rid, bbox, img, adj) in enumerate(loaded_imgs):
+                    gemma_text = ocr_texts[i] or ""
+                    dots_crop_text = ""
+                    if dots_on_crops and dots_engine is not None:
+                        try:
+                            dots_crop_text = run_dots_on_crop(dots_engine, img, DOTS_LAYOUT_PROMPT)
+                            if verbose and dots_crop_text:
+                                print(f"[DOTS-CROP]     {rid}: extracted {len(dots_crop_text.splitlines())} lines")
+                        except Exception:
+                            pass
+                    # Merge Gemma OCR + DOTS crop text, deduplicate lines
+                    merged_lines = []
+                    seen = set()
+                    for line in (gemma_text + "\n" + dots_crop_text).splitlines():
+                        line = line.strip()
+                        if line and line not in seen:
+                            seen.add(line)
+                            merged_lines.append(line)
+                    entry = {"region_id": rid, "bbox": bbox, "text": "\n".join(merged_lines)}
                     if adj:
                         entry["adjacent_text"] = adj
                     if generate_picture_summary and i < len(descriptions):
@@ -403,7 +494,7 @@ def build_final_reports(
                     print(f"[GEMMA]     WARNING: OOM, falling back to single processing")
                 for idx, rid, bbox, img, adj in loaded_imgs:
                     try:
-                        txt = gemma_engine.ocr_crop_plaintext(img)
+                        txt = gemma_engine.ocr_crop_plaintext(img, max_new_tokens=ocr_max_new_tokens)
                     except Exception:
                         txt = ""
                     combined = "\n".join(filter(None, [txt, adj]))
@@ -426,7 +517,7 @@ def build_final_reports(
                     print(f"[GEMMA]     WARNING: Batch failed, falling back to single processing: {e}")
                 for idx, rid, bbox, img, adj in loaded_imgs:
                     try:
-                        txt = gemma_engine.ocr_crop_plaintext(img)
+                        txt = gemma_engine.ocr_crop_plaintext(img, max_new_tokens=ocr_max_new_tokens)
                     except Exception:
                         txt = ""
                     combined = "\n".join(filter(None, [txt, adj]))
@@ -605,7 +696,10 @@ def run_pipeline(cfg: PipelineConfig) -> Path:
             verbose=cfg.verbose,
         )
     finally:
-        dots_engine.close()
+        # Keep DOTS engine alive if dots_on_crops is enabled — it will be closed after Gemma stage
+        if not cfg.dots_on_crops:
+            dots_engine.close()
+            dots_engine = None
 
     if cfg.verbose:
         print(f"\n{'='*60}")
@@ -651,12 +745,20 @@ def run_pipeline(cfg: PipelineConfig) -> Path:
             summary_max_tokens=cfg.summary_max_tokens,
             generate_summary=cfg.generate_summary,
             generate_picture_summary=cfg.generate_picture_summary,
+            use_tiling=cfg.use_tiling,
+            dots_on_crops=cfg.dots_on_crops,
+            dots_engine=dots_engine,
+            ocr_max_new_tokens=cfg.ocr_max_new_tokens,
             verbose=cfg.verbose,
         )
     finally:
         if cfg.verbose:
             print(f"[GEMMA] Closing engine and clearing GPU memory...")
         gemma_engine.close()
+        if cfg.dots_on_crops and dots_engine is not None:
+            if cfg.verbose:
+                print(f"[DOTS] Closing DOTS engine (dots-on-crops mode)...")
+            dots_engine.close()
 
     out_json_path = reports_dir / "final_image_description_reports_combined_batch_v2.json"
     with open(out_json_path, "w", encoding="utf-8") as f:

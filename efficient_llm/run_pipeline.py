@@ -31,6 +31,7 @@ def parse_args():
     parser.add_argument("--extra-max-new-tokens", type=int, default=15000)
     parser.add_argument("--gemma-model-id", default="google/gemma-3n-e4b-it")
     parser.add_argument("--crop-upscale", type=float, default=2.0)
+    parser.add_argument("--ocr-max-new-tokens", type=int, default=512, help="Max tokens for Gemma crop OCR. Raise (e.g. 1536) for dense diagrams where some labels get truncated.")
 
     # Runtime params
     parser.add_argument("--attn-impl", default="flash_attention_2", help="Attention implementation (e.g. flash_attention_2, eager, sdpa)")
@@ -46,6 +47,16 @@ def parse_args():
         "--generate-picture-summary",
         action="store_true",
         help="Enable per-crop semantic description of engineering drawings (disabled by default for performance).",
+    )
+    parser.add_argument(
+        "--no-tiling",
+        action="store_true",
+        help="Disable tiled OCR for large crops. Use when tiling introduces noise in OCR results.",
+    )
+    parser.add_argument(
+        "--dots-on-crops",
+        action="store_true",
+        help="Run DOTS OCR on each picture crop to extract embedded text labels inside diagrams.",
     )
     parser.add_argument(
         "--save-manifest",
@@ -107,6 +118,9 @@ def main():
         max_long_edge_px=args.max_long_edge_px,
         generate_summary=args.generate_summary,
         generate_picture_summary=args.generate_picture_summary,
+        use_tiling=not args.no_tiling,
+        dots_on_crops=args.dots_on_crops,
+        ocr_max_new_tokens=args.ocr_max_new_tokens,
         save_manifest=args.save_manifest,
         verbose=args.verbose,
         attn_impl=args.attn_impl,
