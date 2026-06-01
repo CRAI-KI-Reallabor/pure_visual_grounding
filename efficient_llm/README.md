@@ -362,6 +362,51 @@ python -m efficient_llm.run_pipeline \
   --max-long-edge-px 1536
 ```
 
+### Batch mode (multiple PDFs in a single run)
+
+When processing multiple PDFs, use `--pdf-folder` (folder of PDFs) or `--pdfs` (explicit list) to share a single load of DOTS and Gemma across all documents. This avoids ~25 seconds of model load/unload overhead per document (~4 minutes saved across 10 documents).
+
+**Folder mode (recommended for full document sets):**
+```bash
+python -m efficient_llm.run_pipeline \
+  --dots-model "/path/to/DotsOCR" \
+  --pdf-folder ./solarlux_docs/ \
+  --batch-size 6 \
+  --crop-upscale 1.5 \
+  --pdf-dpi 150 \
+  --padding 80 \
+  --device-map cuda:0 \
+  --attn-impl flash_attention_2 \
+  --generate-picture-summary \
+  --no-tiling \
+  --verbose
+```
+
+All `.pdf` files in the folder are auto-discovered and processed in alphabetical order.
+
+**Explicit list mode (for hand-picking specific PDFs):**
+```bash
+python -m efficient_llm.run_pipeline \
+  --dots-model "/path/to/DotsOCR" \
+  --pdfs ./doc1.pdf ./doc2.pdf ./doc3.pdf \
+  --generate-picture-summary --no-tiling --verbose
+```
+
+Each document's output goes into its own `<base_name>_reports/` directory next to the source PDF. The same flags (`--generate-picture-summary`, `--ocr-max-new-tokens`, etc.) apply to all PDFs in the batch.
+
+**Programmatic API:**
+```python
+from efficient_llm import PipelineConfig, run_pipeline_batch
+
+cfgs = [
+    PipelineConfig(dots_model_path="...", pdf_path="doc1.pdf", generate_picture_summary=True),
+    PipelineConfig(dots_model_path="...", pdf_path="doc2.pdf", generate_picture_summary=True),
+]
+out_paths = run_pipeline_batch(cfgs)
+```
+
+`--pdfs` cannot be combined with `--pdf`, `--image-folder`, `--crops-dir`, or `--reports-dir` — those are auto-derived per document in batch mode.
+
 ## Output Files
 
 ### DOTS OCR output

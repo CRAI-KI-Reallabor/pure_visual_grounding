@@ -799,3 +799,187 @@ def run_pipeline(cfg: PipelineConfig) -> Path:
         print(f"{'='*60}")
 
     return out_json_path
+
+
+def run_pipeline_batch(cfgs: List[PipelineConfig]) -> List[Path]:
+    """
+    Process multiple PDFs sharing a single load of DOTS and Gemma models.
+
+    Avoids the ~25s of model load/unload overhead per document that run_pipeline()
+    incurs when called repeatedly. For 10 documents this saves ~4 minutes.
+
+    All configs must use the same dots_model_path, gemma_model_id, attn_impl,
+    torch_dtype, and device_map. Per-document settings (paths, generate_*,
+    use_tiling, dots_on_crops, etc.) can vary.
+
+    Args:
+        cfgs: List of PipelineConfig instances, one per PDF/image_folder.
+
+    Returns:
+        List of paths to the final report JSON for each input config.
+    """
+    if not cfgs:
+        return []
+
+    first = cfgs[0]
+    verbose = first.verbose
+
+    # Validate config consistency for shared engines
+    for cfg in cfgs[1:]:
+        if str(cfg.dots_model_path) != str(first.dots_model_path):
+            raise ValueError("All configs must share the same dots_model_path for batch mode.")
+        if cfg.gemma_model_id != first.gemma_model_id:
+            raise ValueError("All configs must share the same gemma_model_id for batch mode.")
+
+    dtype = torch.bfloat16 if first.torch_dtype.lower() == "bfloat16" else torch.float16
+
+    # Resolve all input paths and prepare image folders / PDF conversion
+    resolved = []  # list of dicts: {cfg, pdf_path, image_folder, crops_dir, reports_dir, base_name}
+    for cfg in cfgs:
+        if not cfg.pdf_path and not cfg.image_folder:
+            raise ValueError("Every config must provide either pdf_path or image_folder.")
+
+        if cfg.pdf_path:
+            pdf_path = Path(cfg.pdf_path)
+            base_name = pdf_path.stem
+            image_folder = Path(cfg.image_folder) if cfg.image_folder else pdf_path.parent / f"{base_name}_pngs"
+        else:
+            pdf_path = None
+            image_folder = Path(cfg.image_folder)
+            base_name = image_folder.name
+
+        crops_dir = Path(cfg.crops_dir) if cfg.crops_dir else image_folder.parent / f"{base_name}_crops"
+        reports_dir = Path(cfg.reports_dir) if cfg.reports_dir else image_folder.parent / f"{base_name}_reports"
+        image_folder.mkdir(parents=True, exist_ok=True)
+        crops_dir.mkdir(parents=True, exist_ok=True)
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        # Convert PDF to PNGs if needed
+        existing = sorted([f for f in os.listdir(image_folder) if f.lower().endswith(".png")])
+        if not existing:
+            if pdf_path:
+                if verbose:
+                    print(f"[PDF] Converting {pdf_path.name} (dpi={cfg.pdf_dpi})")
+                convert_pdf_to_images(
+                    pdf_path, image_folder, dpi=cfg.pdf_dpi,
+                    max_long_edge_px=cfg.max_long_edge_px,
+                )
+            else:
+                raise FileNotFoundError(f"No PNGs found in {image_folder} and pdf_path not provided.")
+
+        resolved.append({
+            "cfg": cfg,
+            "pdf_path": pdf_path,
+            "image_folder": image_folder,
+            "crops_dir": crops_dir,
+            "reports_dir": reports_dir,
+            "base_name": base_name,
+        })
+
+    # === Phase 1: Load DOTS once, run on every document ===
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"BATCH STEP 1: DOTS Layout OCR for {len(cfgs)} document(s)")
+        print(f"{'='*60}")
+
+    dots_engine = DotsLayoutEngine(
+        model_path=first.dots_model_path,
+        attn_impl=first.attn_impl,
+        torch_dtype=dtype,
+        device_map=first.device_map,
+        verbose=verbose,
+    )
+
+    dots_results = []  # list of dicts: {ocr_map, dots_timing, manifest}
+    try:
+        for entry in resolved:
+            cfg = entry["cfg"]
+            if verbose:
+                print(f"\n[BATCH][DOTS] {entry['base_name']}")
+
+            ocr_map, dots_timing = run_dots_layout_on_folder(
+                engine=dots_engine,
+                image_folder=entry["image_folder"],
+                prompt=DOTS_LAYOUT_PROMPT,
+                batch_size=cfg.batch_size,
+                base_max_new_tokens=cfg.base_max_new_tokens,
+                extra_max_new_tokens=cfg.extra_max_new_tokens,
+                verbose=verbose,
+            )
+
+            picture_map = extract_picture_regions(ocr_map)
+            manifest = build_picture_manifest(
+                picture_map=picture_map,
+                image_root=entry["image_folder"],
+                crops_dir=entry["crops_dir"],
+                padding=cfg.padding,
+                do_crop=True,
+            )
+
+            if cfg.save_manifest:
+                manifest_path = entry["crops_dir"].parent / cfg.manifest_filename
+                with open(manifest_path, "w", encoding="utf-8") as f:
+                    json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+            dots_results.append({"ocr_map": ocr_map, "dots_timing": dots_timing, "manifest": manifest})
+    finally:
+        # Keep DOTS alive only if any config requires dots_on_crops
+        keep_dots = any(c.dots_on_crops for c in cfgs)
+        if not keep_dots:
+            dots_engine.close()
+            dots_engine = None
+
+    # === Phase 2: Load Gemma once, run on every document ===
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"BATCH STEP 2: Gemma Crop OCR for {len(cfgs)} document(s)")
+        print(f"{'='*60}")
+
+    gemma_engine = GemmaCropOcrEngine(
+        model_id=first.gemma_model_id, dtype=dtype, device_map=first.device_map,
+    )
+
+    out_paths: List[Path] = []
+    try:
+        for entry, dots_result in zip(resolved, dots_results):
+            cfg = entry["cfg"]
+            if verbose:
+                print(f"\n[BATCH][GEMMA] {entry['base_name']}")
+
+            final_reports, gemma_timing = build_final_reports(
+                manifest=dots_result["manifest"],
+                ocr_map=dots_result["ocr_map"],
+                gemma_engine=gemma_engine,
+                crop_upscale=cfg.crop_upscale,
+                image_folder=entry["image_folder"],
+                summary_max_tokens=cfg.summary_max_tokens,
+                generate_summary=cfg.generate_summary,
+                generate_picture_summary=cfg.generate_picture_summary,
+                use_tiling=cfg.use_tiling,
+                dots_on_crops=cfg.dots_on_crops,
+                dots_engine=dots_engine,
+                ocr_max_new_tokens=cfg.ocr_max_new_tokens,
+                verbose=verbose,
+            )
+
+            out_json_path = entry["reports_dir"] / "final_image_description_reports_combined_batch_v2.json"
+            with open(out_json_path, "w", encoding="utf-8") as f:
+                json.dump(final_reports, f, ensure_ascii=False, indent=2)
+
+            if verbose:
+                dots_t = dots_result["dots_timing"]["total_time"]
+                gemma_t = gemma_timing["total_time"]
+                print(f"[BATCH] {entry['base_name']}: DOTS {dots_t:.1f}s + Gemma {gemma_t:.1f}s = {dots_t + gemma_t:.1f}s -> {out_json_path}")
+
+            out_paths.append(out_json_path)
+    finally:
+        gemma_engine.close()
+        if dots_engine is not None:
+            dots_engine.close()
+
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"BATCH COMPLETE — processed {len(out_paths)} document(s)")
+        print(f"{'='*60}")
+
+    return out_paths
