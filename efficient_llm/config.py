@@ -29,6 +29,7 @@ class PipelineConfig:
     gemma_model_id: str = "google/gemma-3n-e4b-it"
     crop_upscale: float = 2.0
     summary_max_tokens: int = 2048  # Tokens for summary generation (increased for comprehensive summaries)
+    ocr_max_new_tokens: int = 512   # Tokens for Gemma crop OCR (raise for dense diagrams with many labels)
 
     # runtime/model loading
     attn_impl: str = "flash_attention_2"
@@ -38,6 +39,16 @@ class PipelineConfig:
     # manifest options
     save_manifest: bool = False
     manifest_filename: str = "picture_regions_manifest_summary.json"
+
+    # summary generation
+    generate_summary: bool = False
+    generate_picture_summary: bool = False
+
+    # OCR tiling for large crops
+    use_tiling: bool = True
+
+    # Run DOTS OCR on each picture crop to extract embedded text labels
+    dots_on_crops: bool = False
 
     # logging
     verbose: bool = False

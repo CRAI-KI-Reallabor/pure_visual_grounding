@@ -11,6 +11,15 @@ from qwen_vl_utils import process_vision_info
 from .utils import extract_json_array
 
 
+def _strip_markdown_json(raw: str) -> str:
+    """Strip ```json ... ``` or ``` ... ``` wrappers that models sometimes add."""
+    import re
+    raw = raw.strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+    return raw.strip()
+
+
 class DotsLayoutEngine:
     def __init__(
         self,
@@ -131,6 +140,59 @@ class GemmaCropOcrEngine:
         gc.collect()
         torch.cuda.empty_cache()
 
+    def describe_crop_picture(self, img: Image.Image, ocr_text: str = "", max_new_tokens: int = 512) -> str:
+        """
+        Generate a semantic description of an engineering drawing crop in German.
+
+        Uses PICTURE_DESCRIPTION_PROMPT to describe the diagram's components, spatial
+        relationships, measurements, and functional purpose. The OCR text already
+        extracted from the crop is passed as grounding context so the model can
+        anchor its description to visible labels.
+
+        Args:
+            img: Upscaled crop PIL Image of the picture region.
+            ocr_text: Plain-text OCR labels already extracted from this crop
+                      (from ocr_crop_plaintext). Passed as grounding context.
+            max_new_tokens: Maximum tokens for description generation.
+
+        Returns:
+            German-language semantic description string. Returns raw model output
+            if JSON parsing fails.
+        """
+        from .prompts import PICTURE_DESCRIPTION_PROMPT
+        user_text = f"OCR text found in this crop: {ocr_text}\n\nNow describe the diagram." if ocr_text else "Describe this diagram."
+        messages = [
+            {"role": "system", "content": [{"type": "text", "text": PICTURE_DESCRIPTION_PROMPT}]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": img},
+                    {"type": "text", "text": user_text},
+                ],
+            },
+        ]
+
+        inputs = self.processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_tensors="pt",
+            return_dict=True,
+        ).to(self.model.device)
+
+        with torch.inference_mode():
+            gen = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+
+        generated = gen[0, inputs["input_ids"].shape[-1]:]
+        raw = _strip_markdown_json(self.processor.decode(generated, skip_special_tokens=True))
+
+        try:
+            import json
+            result = json.loads(raw)
+            return result.get("description", raw) if isinstance(result, dict) else raw
+        except Exception:
+            return raw
+
     def ocr_crop_plaintext(self, img: Image.Image, max_new_tokens: int = 512) -> str:
         messages = [
             {
@@ -173,6 +235,51 @@ class GemmaCropOcrEngine:
         generated = gen[0, inputs["input_ids"].shape[-1]:]
         text = self.processor.decode(generated, skip_special_tokens=True)
         return (text or "").strip()
+
+    def ocr_crop_plaintext_tiled(self, img: Image.Image, tile_size: int = 800, overlap: float = 0.2, max_new_tokens: int = 512) -> str:
+        """
+        OCR a large crop by splitting it into overlapping tiles.
+
+        For crops that fit within tile_size, falls back to ocr_crop_plaintext().
+        For large crops, tiles are OCR'd individually and results are deduplicated
+        and merged so labels near tile boundaries are captured correctly.
+
+        Args:
+            img: Full crop PIL Image (already upscaled).
+            tile_size: Max tile width/height in pixels before tiling kicks in.
+            overlap: Fraction of overlap between adjacent tiles.
+            max_new_tokens: Max tokens per tile OCR call.
+
+        Returns:
+            Merged deduplicated plain text from all tiles.
+        """
+        from .utils import tile_image
+
+        tiles = tile_image(img, tile_size=tile_size, overlap=overlap)
+
+        if len(tiles) == 1:
+            return self.ocr_crop_plaintext(img, max_new_tokens=max_new_tokens)
+
+        tile_texts = []
+        for tile in tiles:
+            try:
+                text = self.ocr_crop_plaintext(tile, max_new_tokens=max_new_tokens)
+                if text:
+                    tile_texts.append(text)
+            except Exception:
+                pass
+
+        # Deduplicate lines across tiles while preserving order
+        seen = set()
+        merged_lines = []
+        for block in tile_texts:
+            for line in block.splitlines():
+                line = line.strip()
+                if line and line not in seen:
+                    seen.add(line)
+                    merged_lines.append(line)
+
+        return "\n".join(merged_lines)
 
     def ocr_crop_plaintext_batch(self, images: List[Image.Image], max_new_tokens: int = 512, batch_size: int = None) -> List[str]:
         """
@@ -327,18 +434,198 @@ class GemmaCropOcrEngine:
         
         return all_results
 
+    def describe_crop_picture_batch(self, images: List[Image.Image], ocr_texts: List[str], max_new_tokens: int = 512, batch_size: int = None) -> List[str]:
+        """
+        Generate semantic descriptions for multiple engineering drawing crops in a single batched forward pass.
+
+        Each image gets its own OCR text as grounding context in the user message, so prompts
+        differ per image. They are padded and batched the same way as ocr_crop_plaintext_batch().
+        Falls back to sequential describe_crop_picture() calls on OOM or any exception.
+
+        Args:
+            images: List of upscaled crop PIL Images.
+            ocr_texts: List of OCR strings already extracted per crop (aligned with images).
+            max_new_tokens: Maximum tokens per description.
+            batch_size: If None, auto-determined from available VRAM.
+
+        Returns:
+            List of German semantic description strings, one per image.
+        """
+        from .prompts import PICTURE_DESCRIPTION_PROMPT
+
+        if not images:
+            return []
+
+        if batch_size is None:
+            try:
+                if torch.cuda.is_available():
+                    gpu_mem_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                    if gpu_mem_gb >= 40:
+                        batch_size = 8
+                    elif gpu_mem_gb >= 24:
+                        batch_size = 6
+                    elif gpu_mem_gb >= 16:
+                        batch_size = 4
+                    elif gpu_mem_gb >= 12:
+                        batch_size = 3
+                    else:
+                        batch_size = 2
+                else:
+                    batch_size = 1
+            except Exception:
+                batch_size = 2
+
+        all_results = []
+
+        for chunk_start in range(0, len(images), batch_size):
+            chunk_end = min(chunk_start + batch_size, len(images))
+            chunk_images = images[chunk_start:chunk_end]
+            chunk_texts = ocr_texts[chunk_start:chunk_end]
+
+            try:
+                all_input_ids = []
+                all_attention_masks = []
+                all_pixel_values = []
+
+                for img, ocr_text in zip(chunk_images, chunk_texts):
+                    user_text = f"OCR text found in this crop: {ocr_text}\n\nNow describe the diagram." if ocr_text else "Describe this diagram."
+                    messages = [
+                        {"role": "system", "content": [{"type": "text", "text": PICTURE_DESCRIPTION_PROMPT}]},
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image", "image": img},
+                                {"type": "text", "text": user_text},
+                            ],
+                        },
+                    ]
+                    inputs = self.processor.apply_chat_template(
+                        messages,
+                        add_generation_prompt=True,
+                        tokenize=True,
+                        return_tensors="pt",
+                        return_dict=True,
+                    )
+                    all_input_ids.append(inputs["input_ids"])
+                    all_attention_masks.append(inputs["attention_mask"])
+                    if "pixel_values" in inputs:
+                        all_pixel_values.append(inputs["pixel_values"])
+
+                max_len = max(t.shape[-1] for t in all_input_ids)
+                pad_token_id = self.processor.tokenizer.pad_token_id or 0
+
+                padded_input_ids = []
+                padded_attention_masks = []
+                for ids, mask in zip(all_input_ids, all_attention_masks):
+                    pad_len = max_len - ids.shape[-1]
+                    if pad_len > 0:
+                        ids = torch.cat([torch.full((1, pad_len), pad_token_id, dtype=ids.dtype), ids], dim=-1)
+                        mask = torch.cat([torch.zeros((1, pad_len), dtype=mask.dtype), mask], dim=-1)
+                    padded_input_ids.append(ids)
+                    padded_attention_masks.append(mask)
+
+                batched_input_ids = torch.cat(padded_input_ids, dim=0).to(self.model.device)
+                batched_attention_mask = torch.cat(padded_attention_masks, dim=0).to(self.model.device)
+                batched_inputs = {"input_ids": batched_input_ids, "attention_mask": batched_attention_mask}
+                if all_pixel_values:
+                    batched_inputs["pixel_values"] = torch.cat(all_pixel_values, dim=0).to(self.model.device)
+
+                with torch.inference_mode():
+                    gen = self.model.generate(
+                        **batched_inputs,
+                        max_new_tokens=max_new_tokens,
+                        do_sample=False,
+                        pad_token_id=pad_token_id,
+                    )
+
+                import json
+                for i in range(len(chunk_images)):
+                    raw = _strip_markdown_json(self.processor.decode(gen[i, max_len:], skip_special_tokens=True))
+                    try:
+                        result = json.loads(raw)
+                        all_results.append(result.get("description", raw) if isinstance(result, dict) else raw)
+                    except Exception:
+                        all_results.append(raw)
+
+                del batched_inputs, gen, all_input_ids, all_attention_masks, all_pixel_values
+                torch.cuda.empty_cache()
+
+            except torch.OutOfMemoryError:
+                torch.cuda.empty_cache()
+                for img, txt in zip(chunk_images, chunk_texts):
+                    try:
+                        all_results.append(self.describe_crop_picture(img, ocr_text=txt, max_new_tokens=max_new_tokens))
+                    except Exception:
+                        all_results.append("")
+
+            except Exception:
+                torch.cuda.empty_cache()
+                for img, txt in zip(chunk_images, chunk_texts):
+                    try:
+                        all_results.append(self.describe_crop_picture(img, ocr_text=txt, max_new_tokens=max_new_tokens))
+                    except Exception:
+                        all_results.append("")
+
+        return all_results
+
     def generate_page_summary(self, img: Image.Image, ocr_context: str = "", max_new_tokens: int = 2048) -> Dict[str, Any]:
         """
-        Concatenate OCR text for full page (no model generation for better performance).
-        
+        Generate a holistic semantic summary of a full document page in German.
+
+        Uses SUMMARY_PROMPT with the full page image and OCR context (DOTS layout
+        results + picture descriptions if available) to produce a comprehensive
+        page-level summary suitable for RAG retrieval.
+
+        When --generate-picture-summary is also enabled, the ocr_context passed here
+        includes per-crop descriptions from describe_crop_picture(), giving the model
+        rich grounding for any engineering drawings on the page.
+
         Args:
-            img: Full page PIL Image (not used, kept for API compatibility)
-            ocr_context: OCR text context to concatenate
-            max_new_tokens: Not used, kept for API compatibility
-            
+            img: Full page PIL Image at pipeline DPI resolution.
+            ocr_context: JSON string of DOTS OCR results and optionally picture
+                         descriptions from describe_crop_picture().
+            max_new_tokens: Maximum tokens for summary generation (default 2048).
+
         Returns:
-            Dictionary with 'summary' key containing the concatenated OCR text
+            Dict with 'summary' key containing the German page summary string.
+            Returns raw model output wrapped in {'summary': raw} if JSON parsing fails.
         """
-        # Simply return the concatenated OCR context for better RAG performance
-        summary_text = ocr_context.strip() if ocr_context else "No text content extracted."
-        return {"summary": summary_text}
+        from .prompts import SUMMARY_PROMPT
+        messages = [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": SUMMARY_PROMPT}],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": img},
+                    {"type": "text", "text": f"OCR context:\n{ocr_context}" if ocr_context else "Analyse this page."},
+                ],
+            },
+        ]
+
+        inputs = self.processor.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_tensors="pt",
+            return_dict=True,
+        ).to(self.model.device)
+
+        with torch.inference_mode():
+            gen = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+            )
+
+        generated = gen[0, inputs["input_ids"].shape[-1]:]
+        raw = _strip_markdown_json(self.processor.decode(generated, skip_special_tokens=True))
+
+        try:
+            import json
+            result = json.loads(raw)
+            return result if isinstance(result, dict) else {"summary": raw}
+        except Exception:
+            return {"summary": raw}
